@@ -135,6 +135,8 @@ async function uploads(ch) {
   }
 }
 
+const isShortsPlaylist = title => !settings.includeShorts && /\bshorts?\b/i.test(title);
+
 // Returns the channel's playlists (up to MAX_PLAYLISTS_PER_CHANNEL with 2+ videos)
 // and how many API calls that took. Only videos the channel itself uploaded are kept,
 // since playlists can include anyone's videos.
@@ -147,8 +149,7 @@ async function channelPlaylists(channelId) {
       part: 'snippet,contentDetails', channelId, maxResults: 50, ...(pageToken && { pageToken }),
     });
     calls++;
-    lists.push(...page.items.filter(p => p.contentDetails.itemCount >= 2
-      && (settings.includeShorts || !/\bshorts?\b/i.test(p.snippet.title))));
+    lists.push(...page.items.filter(p => p.contentDetails.itemCount >= 2 && !isShortsPlaylist(p.snippet.title)));
     pageToken = page.nextPageToken;
   } while (pageToken && lists.length < MAX_PLAYLISTS_PER_CHANNEL);
 
@@ -304,6 +305,7 @@ for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
   const channel = channels.get(channelId);
   if (!channel) continue;
   const kept = playlists
+    .filter(p => !isShortsPlaylist(p.title)) // also applies to playlists cached before this rule
     .map(p => ({ id: p.id, title: p.title, videos: p.videos.filter(id => byId.has(id)) }))
     .filter(p => p.videos.length);
   if (!kept.length) continue;
