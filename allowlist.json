@@ -92,6 +92,11 @@
     { "id": "UCDVn8wLFP-zeFVWfWIFb14A", "name": "NRK Super", "handle": "@NRKsuper", "category": "Languages", "ages": "4+", "note": "Norwegian public kids' TV; mostly BlimE music videos." }
   ],
   "curateByVideo": [
+    { "id": "UCM15YNy8g-CaJ15YZCbq0Iw", "name": "North of the Border", "handle": "@NorthoftheBorder", "category": "Zelda & Pokémon", "ages": "7+", "note": "Clay sculpting and crafts (Tiny Nerdy Things). Only these three playlists.", "playlists": [
+      "https://www.youtube.com/playlist?list=PLEFntmZ7j7LKRCTC5iIgu2iPBwWqh5YPC",
+      "https://www.youtube.com/playlist?list=PLEFntmZ7j7LL3LI8wRS2UCzEMyukudm1l",
+      "https://www.youtube.com/playlist?list=PLEFntmZ7j7LKb7uN5ke2J9E9AFPiphVqF"
+    ] },
     { "id": "UCHTnEwQKNwm49CQeCVZogMw", "name": "Boundary Break", "handle": "@BoundaryBreak", "category": "Zelda & Pokémon", "ages": "9+", "note": "How game levels are built; also covers horror/M-rated games." },
     { "id": "UCIVmyfvsWvjOLQrB04As8kQ", "name": "DidYouKnowGaming", "handle": "@DidYouKnowGaming", "category": "Zelda & Pokémon", "ages": "10+", "note": "Good research, clickbait-leaning titles, M-rated games." },
     { "id": "UCHsRtomD4twRf5WVHHk-cMw", "name": "TierZoo", "handle": "@TierZoo", "category": "Zelda & Pokémon", "ages": "11+", "note": "Biology in gamer terms; sarcastic older humor." },

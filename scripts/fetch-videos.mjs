@@ -78,6 +78,15 @@ function parseVideoId(entry) {
   throw new Error(`Can't read video "${entry}". Use a video id or URL.`);
 }
 
+// Accepts a playlist id or any URL with ?list=… (a playlist page or a video in one).
+function parsePlaylistId(entry) {
+  const s = entry.trim();
+  const m = s.match(/[?&]list=([\w-]+)/);
+  if (m) return m[1];
+  if (/^(PL|OL|UU|FL)[\w-]{10,}$/.test(s)) return s;
+  throw new Error(`Can't read playlist "${entry}". Use a playlist URL or id.`);
+}
+
 function seconds(iso) {
   const m = iso.match(/P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   const [d, h, min, s] = m.slice(1).map(n => Number(n ?? 0));
@@ -336,6 +345,29 @@ const matchesTitleFilter = v => {
   return !filter || filter.some(t => normalizeTitle(v.snippet.title).includes(t));
 };
 
+// Curated channels with "playlists" include every video in those playlists (and
+// nothing else of theirs), and show them as the playlist buttons on the channel page.
+const curatedPlaylists = {}; // channel id -> [{ id, title, videos }]
+const playlistRequests = resolved
+  .map((ch, i) => ({ ch, e: entries[i] }))
+  .slice(fullEntries.length)
+  .filter(({ ch, e }) => ch && e.playlists?.length);
+await mapLimit(playlistRequests, 4, async ({ ch, e }) => {
+  const ids = parseAll(e.playlists, parsePlaylistId);
+  const { items = [] } = await api('playlists', { part: 'snippet', id: ids.join(','), maxResults: 50 });
+  const titles = new Map(items.map(p => [p.id, p.snippet.title]));
+  curatedPlaylists[ch.id] = [];
+  for (const id of ids) {
+    if (!titles.has(id)) {
+      problems.push(`Playlist not found: ${id} (${e.name ?? ch.snippet.title})`);
+      continue;
+    }
+    const videos = await playlistVideoIds(id, MAX_PLAYLIST_PAGES * 50);
+    for (const v of videos) wanted.set(v, { from: ch.id });
+    curatedPlaylists[ch.id].push({ id, title: titles.get(id), videos });
+  }
+});
+
 const fullChannels = resolved.slice(0, fullEntries.length).filter(Boolean);
 const playlistCache = await refreshPlaylists(fullChannels);
 for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
@@ -374,7 +406,11 @@ const inMainList = new Set(videos.map(v => v.id));
 const channelDir = new URL('site/channels/', root);
 await rm(channelDir, { recursive: true, force: true });
 await mkdir(channelDir, { recursive: true });
-for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
+const playlistsByChannel = {
+  ...Object.fromEntries(Object.entries(playlistCache).map(([id, cached]) => [id, cached.playlists])),
+  ...curatedPlaylists,
+};
+for (const [channelId, playlists] of Object.entries(playlistsByChannel)) {
   const channel = channels.get(channelId);
   if (!channel) continue;
   const kept = playlists
