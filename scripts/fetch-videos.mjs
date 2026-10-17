@@ -208,6 +208,62 @@ async function refreshPlaylists(channelList) {
   return current;
 }
 
+// Video details (title, length, whether it can be embedded) are cached too: refetching
+// all ~27,000 every run used up the daily quota. New videos are always fetched; cached
+// ones are refreshed after VIDEO_TTL_MS, at most VIDEO_REFRESH_LIMIT per run.
+const VIDEO_CACHE = new URL('.cache/videos.json', root);
+const VIDEO_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const VIDEO_REFRESH_LIMIT = 5000;
+
+// Keeps only the fields this script reads, to keep the cache small.
+const slim = v => ({
+  id: v.id,
+  snippet: {
+    title: v.snippet.title,
+    channelId: v.snippet.channelId,
+    channelTitle: v.snippet.channelTitle,
+    publishedAt: v.snippet.publishedAt,
+    liveBroadcastContent: v.snippet.liveBroadcastContent,
+  },
+  contentDetails: {
+    duration: v.contentDetails.duration,
+    contentRating: { ytRating: v.contentDetails.contentRating?.ytRating },
+  },
+  status: {
+    privacyStatus: v.status.privacyStatus,
+    uploadStatus: v.status.uploadStatus,
+    embeddable: v.status.embeddable,
+  },
+});
+
+async function videoDetails(ids) {
+  let cache = {};
+  try {
+    cache = JSON.parse(await readFile(VIDEO_CACHE, 'utf8'));
+  } catch {}
+
+  const now = Date.now();
+  const missing = ids.filter(id => !cache[id]);
+  const stale = ids
+    .filter(id => cache[id] && now - cache[id].fetchedAt >= VIDEO_TTL_MS)
+    .sort((a, b) => cache[a].fetchedAt - cache[b].fetchedAt)
+    .slice(0, VIDEO_REFRESH_LIMIT);
+  const toFetch = [...missing, ...stale];
+
+  const pages = await mapLimit(chunks(toFetch, 50), 8, batch =>
+    api('videos', { part: 'snippet,contentDetails,status', id: batch.join(','), maxResults: 50 }));
+  const fetchedAt = Date.now();
+  const returned = new Map(pages.flatMap(p => p.items).map(v => [v.id, slim(v)]));
+  // Deleted videos aren't returned; remember that so they aren't asked for every run.
+  for (const id of toFetch) cache[id] = { fetchedAt, item: returned.get(id) ?? null };
+  console.log(`Video details: ${missing.length} new, ${stale.length} refreshed, ${ids.length - toFetch.length} from cache.`);
+
+  const keep = Object.fromEntries(ids.map(id => [id, cache[id]]));
+  await mkdir(new URL('.cache/', root), { recursive: true });
+  await writeFile(VIDEO_CACHE, JSON.stringify(keep));
+  return ids.map(id => keep[id].item).filter(Boolean);
+}
+
 function playable(v) {
   return v.status.privacyStatus !== 'private'
     && v.status.uploadStatus === 'processed'
@@ -293,9 +349,7 @@ for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
 for (const v of videoEntries) wanted.set(v.id, { ...wanted.get(v.id), playlistOnly: false, category: v.category });
 for (const id of blocked) wanted.delete(id);
 
-const pages = await mapLimit(chunks([...wanted.keys()], 50), 8, ids =>
-  api('videos', { part: 'snippet,contentDetails,status', id: ids.join(','), maxResults: 50 }));
-const details = pages.flatMap(p => p.items);
+const details = await videoDetails([...wanted.keys()]);
 
 const allVideos = details.filter(playable).filter(matchesTitleFilter)
   .sort((a, b) => b.snippet.publishedAt.localeCompare(a.snippet.publishedAt))
