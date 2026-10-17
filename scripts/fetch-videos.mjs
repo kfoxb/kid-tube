@@ -169,7 +169,7 @@ resolved.forEach((ch, i) => {
   const e = entries[i];
   channels.set(ch.id, {
     id: ch.id,
-    title: ch.snippet.title,
+    title: e.name ?? ch.snippet.title,
     avatar: ch.snippet.thumbnails?.medium?.url ?? ch.snippet.thumbnails?.default?.url ?? '',
     category: e.category ?? 'Other',
     ...(e.ages && { ages: e.ages }),
