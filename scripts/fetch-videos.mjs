@@ -147,7 +147,8 @@ async function channelPlaylists(channelId) {
       part: 'snippet,contentDetails', channelId, maxResults: 50, ...(pageToken && { pageToken }),
     });
     calls++;
-    lists.push(...page.items.filter(p => p.contentDetails.itemCount >= 2));
+    lists.push(...page.items.filter(p => p.contentDetails.itemCount >= 2
+      && (settings.includeShorts || !/\bshorts?\b/i.test(p.snippet.title))));
     pageToken = page.nextPageToken;
   } while (pageToken && lists.length < MAX_PLAYLISTS_PER_CHANNEL);
 
