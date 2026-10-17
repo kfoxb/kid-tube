@@ -33,7 +33,32 @@ const icons = {
 // ---------- helpers ----------
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const thumb = (id, quality = 'mqdefault') => `https://i.ytimg.com/vi/${id}/${quality}.jpg`;
+// A still from the video itself rather than the uploader's (often click-bait) thumbnail.
+// YouTube keeps frames from roughly 1/4 (…1.jpg) and 3/4 (…3.jpg) of the way through.
+// The 1/2 frame (…2.jpg) is skipped because it's sometimes replaced by the custom thumbnail.
+function frameImg(id, size, className = '') {
+  const url = n => `https://i.ytimg.com/vi/${id}/${size}${n}.jpg`;
+  return `<img class="${className}" src="${url(3)}" data-fallback="${url(1)}" alt="" loading="lazy">`;
+}
+
+// Missing frames come back as a 120x90 grey placeholder, sometimes with a 200 status.
+function onFrameFailed(img) {
+  if (img.dataset.fallback) {
+    img.src = img.dataset.fallback;
+    delete img.dataset.fallback;
+  } else {
+    img.classList.add('no-frame');
+  }
+}
+
+document.addEventListener('error', e => {
+  if (e.target.matches?.('img[src*="i.ytimg.com"]')) onFrameFailed(e.target);
+}, true);
+
+document.addEventListener('load', e => {
+  const img = e.target;
+  if (img.matches?.('img[src*="i.ytimg.com"]') && img.naturalWidth <= 120) onFrameFailed(img);
+}, true);
 
 function fmtTime(total) {
   const s = Math.max(0, Math.floor(total));
@@ -80,7 +105,7 @@ function card(v, hist) {
   const pct = h?.duration ? Math.min(100, (h.position / h.duration) * 100) : 0;
   return `<a class="card" href="#/watch/${v.id}">
     <div class="thumb">
-      <img src="${thumb(v.id)}" alt="" loading="lazy">
+      ${frameImg(v.id, 'mq')}
       <span class="duration">${fmtTime(v.duration)}</span>
       ${pct ? `<span class="watched" style="width:${pct}%"></span>` : ''}
     </div>
@@ -169,7 +194,8 @@ async function showWatch(id) {
         <div class="stage">
           <div class="frame"><div id="player"></div></div>
           <div class="shield" id="shield"></div>
-          <div class="cover" id="cover" style="background-image:url(${thumb(id, 'hqdefault')})">
+          <div class="cover" id="cover">
+            ${frameImg(id, 'hq', 'cover-img')}
             <button class="big-play" id="big-play" aria-label="Play">${icons.play}</button>
           </div>
           <div class="message hidden" id="message"></div>
@@ -407,6 +433,20 @@ document.addEventListener('contextmenu', e => {
   if (e.target.closest('.stage')) e.preventDefault();
 });
 
+function showUpdated() {
+  const updated = new Date(data.generatedAt);
+  if (isNaN(updated)) return;
+  const hours = (Date.now() - updated) / 36e5;
+  const ago = hours < 1 ? 'less than an hour ago'
+    : hours < 48 ? `${Math.floor(hours)} hour${hours < 2 ? '' : 's'} ago`
+    : `${Math.floor(hours / 24)} days ago`;
+  const footer = $('#updated');
+  footer.textContent = `Video list updated ${ago}`;
+  footer.title = updated.toLocaleString();
+  // The list normally refreshes every 6 hours, so a day without one means the workflow stopped.
+  footer.classList.toggle('stale', hours > 24);
+}
+
 async function init() {
   try {
     const res = await fetch('videos.json', { cache: 'no-cache' });
@@ -417,6 +457,7 @@ async function init() {
   }
   byId = new Map(data.videos.map(v => [v.id, v]));
   renderChips();
+  showUpdated();
   route();
 }
 

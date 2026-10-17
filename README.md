@@ -51,6 +51,12 @@ Then open http://localhost:8000. The page has to be served over http; the YouTub
 - While a video is paused or finished, the thumbnail covers it, hiding YouTube's suggested-video screens.
 - The app only plays IDs that are in the built `videos.json`.
 
+## Thumbnails
+
+Uploaders' thumbnails aren't used. Each video shows a still that YouTube takes from about ¾ of the way through, or about ¼ if that one is missing. If neither exists, the card shows a plain tile.
+
+The page footer shows when the video list was last refreshed. It turns red if that was more than a day ago, which means the scheduled workflow has stopped.
+
 Ads still play. Skippable ads can't be skipped because the skip button is under the click-blocking layer.
 
 Keyboard: space or `k` play/pause, ←/→ skip 10 seconds, `f` full screen, `m` mute.
