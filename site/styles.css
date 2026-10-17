@@ -60,6 +60,7 @@ button {
 
 #search {
   flex: 1;
+  min-width: 0;
   max-width: 520px;
   margin-left: auto;
   padding: 12px 18px;
@@ -124,12 +125,94 @@ h2 {
   gap: 22px 18px;
 }
 
-.grid.row {
+.row {
+  display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(240px, 280px);
-  grid-template-columns: none;
+  grid-auto-columns: minmax(220px, 260px);
+  gap: 18px;
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.list-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.list-head h2 { margin-right: auto; }
+
+.sorts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pill {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.9rem;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+.pill.active {
+  background: var(--text);
+  color: #fff;
+}
+
+.channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 18px;
+}
+
+.channel-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: center;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+  transition: transform 0.12s;
+}
+
+.channel-card:hover { transform: translateY(-3px); }
+
+.channel-card img,
+.avatar-blank {
+  width: 96px;
+  height: 96px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-blank {
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 2.4rem;
+  font-weight: 800;
+}
+
+.channel-name {
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.channel-count {
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .card {
@@ -417,9 +500,69 @@ h2 {
   opacity: 1;
 }
 
+/* Some phones (iOS) won't start a video from our button. When that happens the
+   cover steps aside and a hole in the shield lets a tap reach YouTube's own
+   play button in the middle; everything else stays blocked. */
+.tap-through .cover { display: none; }
+
+.tap-through .shield {
+  clip-path: polygon(evenodd,
+    0 0, 100% 0, 100% 100%, 0 100%, 0 0,
+    35% 30%, 35% 70%, 65% 70%, 65% 30%, 35% 30%);
+}
+
+.no-fullscreen #btn-full { display: none; }
+
+@media (hover: none) {
+  .card:hover, .channel-card:hover, .big-play:hover { transform: none; }
+}
+
 @media (max-width: 640px) {
   .topbar, .chips, main { padding-left: 16px; padding-right: 16px; }
-  .logo { font-size: 1.2rem; }
-  .controls { flex-wrap: wrap; }
+  .topbar { gap: 12px; padding-top: 10px; padding-bottom: 10px; }
+  .logo { font-size: 1.15rem; }
+  .logo-mark { width: 32px; height: 32px; }
+  #search { padding: 10px 14px; font-size: 1rem; }
+  h2 { font-size: 1.15rem; }
+
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 12px;
+  }
+  .row { grid-auto-columns: 46%; gap: 12px; }
+  .card-title { font-size: 0.9rem; }
+  .card-channel { font-size: 0.8rem; }
+  .duration { font-size: 0.7rem; right: 6px; bottom: 6px; }
+
+  .channel-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .watch { margin: 0 -16px; }
+  .player-wrap { border-radius: 0; }
+  .watch-title, .watch-channel, .watch > h2, .watch > .grid { margin-left: 16px; margin-right: 16px; }
+  .watch-channel { display: inline-block; }
+  .watch-title { font-size: 1.2rem; }
+  .controls { flex-wrap: wrap; justify-content: space-between; padding: 8px 10px; }
+  .controls button { width: 44px; height: 44px; }
+  .time { min-width: 0; font-size: 0.85rem; }
   #seek { order: -1; flex-basis: 100%; margin: 6px 0; }
+  .big-play { width: 76px; height: 76px; }
+  .big-play svg { width: 40px; height: 40px; }
+}
+
+/* Phone turned sideways: let the player take the whole screen. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .topbar { position: static; }
+  .watch .player-wrap {
+    height: 100dvh;
+    border-radius: 0;
+  }
+  .watch .stage {
+    flex: 1;
+    aspect-ratio: auto;
+  }
+  .watch .controls { flex-wrap: nowrap; }
+  .watch #seek { order: 0; flex-basis: auto; }
 }

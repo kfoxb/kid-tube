@@ -110,7 +110,7 @@ for (const entry of allowlist.channels ?? []) {
     }
     ids ??= await playlistVideoIds(ch.contentDetails.relatedPlaylists.uploads, settings.maxVideosPerChannel);
 
-    channels.push({ id: ch.id, title: ch.snippet.title, avatar: ch.snippet.thumbnails?.default?.url ?? '' });
+    channels.push({ id: ch.id, title: ch.snippet.title, avatar: ch.snippet.thumbnails?.medium?.url ?? ch.snippet.thumbnails?.default?.url ?? '' });
     ids.forEach(id => wanted.add(id));
     console.log(`${ch.snippet.title}: ${ids.length} uploads`);
   } catch (err) {

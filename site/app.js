@@ -3,7 +3,9 @@
 
 const HISTORY_KEY = 'kidtube.history';
 const HISTORY_MAX = 200;
+const SORT_KEY = 'kidtube.sort';
 const PAGE_SIZE = 60;
+const ROW_SIZE = 12;
 const SAVE_EVERY_MS = 5000;
 
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -114,36 +116,120 @@ function card(v, hist) {
   </a>`;
 }
 
-function grid(videos, hist, className = 'grid') {
-  return `<div class="${className}">${videos.map(v => card(v, hist)).join('')}</div>`;
+// Random order stays put until "Shuffle" is pressed, so rows don't jump around
+// every time the kids come back from a video.
+let randomRank = new Map();
+function rank(v) {
+  if (!randomRank.has(v.id)) randomRank.set(v.id, Math.random());
+  return randomRank.get(v.id);
 }
 
-function showList(heading, videos, { top = '', emptyText = 'No videos here yet.' } = {}) {
+const SORTS = {
+  newest: { label: 'Newest', compare: (a, b) => b.publishedAt.localeCompare(a.publishedAt) },
+  random: { label: 'Random', compare: (a, b) => rank(a) - rank(b) },
+  short: { label: 'Shortest', compare: (a, b) => a.duration - b.duration },
+  long: { label: 'Longest', compare: (a, b) => b.duration - a.duration },
+  oldest: { label: 'Oldest', compare: (a, b) => a.publishedAt.localeCompare(b.publishedAt) },
+};
+
+let sortKey = (() => {
+  try {
+    const saved = localStorage.getItem(SORT_KEY);
+    return saved in SORTS ? saved : 'newest';
+  } catch {
+    return 'newest';
+  }
+})();
+
+const sortBy = (videos, key) => [...videos].sort(SORTS[key].compare);
+
+function grid(videos, hist) {
+  return `<div class="grid">${videos.map(v => card(v, hist)).join('')}</div>`;
+}
+
+function row(heading, videos, hist, action = '') {
+  if (!videos.length) return '';
+  return `<section>
+    <div class="list-head"><h2>${esc(heading)}</h2>${action}</div>
+    <div class="row">${videos.map(v => card(v, hist)).join('')}</div>
+  </section>`;
+}
+
+function sortBar() {
+  return `<div class="sorts">${Object.entries(SORTS).map(([key, s]) =>
+    `<button class="pill${key === sortKey ? ' active' : ''}" data-action="sort" data-sort="${key}">${s.label}</button>`,
+  ).join('')}</div>`;
+}
+
+function showList(heading, videos, { top = '', emptyText = 'No videos here yet.', sortable = false } = {}) {
   const hist = historyMap();
   const q = search.value.trim().toLowerCase();
-  const filtered = q
+  let list = q
     ? videos.filter(v => `${v.title} ${v.channelTitle}`.toLowerCase().includes(q))
     : videos;
+  if (sortable) list = sortBy(list, sortKey);
 
   let body;
-  if (!filtered.length) {
+  if (!list.length) {
     body = `<p class="empty">${q ? 'Nothing matches that search.' : emptyText}</p>`;
   } else {
-    body = grid(filtered.slice(0, shown), hist);
-    if (filtered.length > shown) body += '<button class="more" data-action="more">Show more</button>';
+    body = grid(list.slice(0, shown), hist);
+    if (list.length > shown) body += '<button class="more" data-action="more">Show more</button>';
   }
-  view.innerHTML = `${q ? '' : top}<h2>${esc(q ? `Results for “${search.value.trim()}”` : heading)}</h2>${body}`;
+  const title = q ? `Results for “${search.value.trim()}”` : heading;
+  view.innerHTML = `${q ? '' : top}
+    <div class="list-head"><h2>${esc(title)}</h2>${sortable && list.length > 1 ? sortBar() : ''}</div>
+    ${body}`;
 }
 
 function showHome() {
   const hist = historyMap();
-  const resume = loadHistory().filter(inProgress).map(h => byId.get(h.id)).filter(Boolean).slice(0, 8);
-  const top = resume.length ? `<h2>Keep watching</h2>${grid(resume, hist, 'grid row')}` : '';
-  showList('Newest videos', data.videos, { top });
+  const history = loadHistory();
+  const shuffled = sortBy(data.videos, 'random');
+
+  const picks = shuffled.slice(0, ROW_SIZE);
+  const pickIds = new Set(picks.map(v => v.id));
+  const resume = history.filter(inProgress).map(h => byId.get(h.id)).filter(Boolean).slice(0, ROW_SIZE);
+
+  // Unwatched videos, from channels they've watched before when there are enough of those.
+  const unseen = shuffled.filter(v => !hist.has(v.id) && !pickIds.has(v.id));
+  const watchedSources = new Set(history.map(h => byId.get(h.id)?.source));
+  const familiar = unseen.filter(v => watchedSources.has(v.source));
+  const suggestions = (familiar.length >= ROW_SIZE ? familiar : unseen).slice(0, ROW_SIZE);
+
+  const top = row('Random picks', picks, hist, '<button class="pill" data-action="shuffle">Shuffle</button>')
+    + row('Keep watching', resume, hist)
+    + (history.length ? row('Something new', suggestions, hist) : '');
+  showList('All videos', data.videos, { top, sortable: true });
 }
 
 function showChannel(source) {
-  showList(sourceTitle(source) || 'Videos', data.videos.filter(v => v.source === source));
+  showList(sourceTitle(source) || 'Videos', data.videos.filter(v => v.source === source), { sortable: true });
+}
+
+function channelList() {
+  const counts = new Map();
+  for (const v of data.videos) counts.set(v.source, (counts.get(v.source) ?? 0) + 1);
+  return [
+    ...data.channels.map(c => ({ key: c.id, title: c.title, avatar: c.avatar })),
+    { key: 'extra', title: 'More videos', avatar: '' },
+  ]
+    .map(s => ({ ...s, count: counts.get(s.key) ?? 0 }))
+    .filter(s => s.count)
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+function showChannels() {
+  const q = search.value.trim().toLowerCase();
+  const list = channelList().filter(s => s.title.toLowerCase().includes(q));
+  const tiles = list.map(s => `<a class="channel-card" href="#/c/${encodeURIComponent(s.key)}">
+      ${s.avatar ? `<img src="${esc(s.avatar)}" alt="" loading="lazy">` : `<span class="avatar-blank">${esc(s.title[0])}</span>`}
+      <span class="channel-name">${esc(s.title)}</span>
+      <span class="channel-count">${s.count} video${s.count === 1 ? '' : 's'}</span>
+    </a>`).join('');
+  view.innerHTML = `<h2>Channels</h2>${list.length
+    ? `<div class="channel-grid">${tiles}</div>`
+    : '<p class="empty">No channels match that search.</p>'}`;
 }
 
 function showHistory() {
@@ -153,21 +239,17 @@ function showHistory() {
 }
 
 function renderChips() {
-  const sources = [
-    ...data.channels.map(c => ({ key: c.id, title: c.title, avatar: c.avatar })),
-    ...(data.videos.some(v => v.source === 'extra') ? [{ key: 'extra', title: 'More videos' }] : []),
-  ];
   chips.innerHTML = [
     '<a class="chip" href="#/">Home</a>',
+    '<a class="chip" href="#/channels">Channels</a>',
     '<a class="chip" href="#/history">Watched</a>',
-    ...sources.map(s => `<a class="chip" href="#/c/${encodeURIComponent(s.key)}">
-      ${s.avatar ? `<img src="${esc(s.avatar)}" alt="">` : ''}${esc(s.title)}</a>`),
   ].join('');
 }
 
 function markActiveChip() {
-  const hash = location.hash.startsWith('#/c/') || location.hash === '#/history' ? location.hash : '#/';
-  for (const a of chips.querySelectorAll('a')) a.classList.toggle('active', a.getAttribute('href') === hash);
+  const page = location.hash.split('/')[1] ?? '';
+  const active = { '': '#/', c: '#/channels', channels: '#/channels', history: '#/history' }[page];
+  for (const a of chips.querySelectorAll('a')) a.classList.toggle('active', a.getAttribute('href') === active);
 }
 
 // ---------- player ----------
@@ -260,6 +342,12 @@ function togglePlay() {
   } else {
     if (player.getPlayerState() === YT.PlayerState.ENDED) player.seekTo(0, true);
     player.playVideo();
+    // iOS ignores play requests that don't come from a tap inside the player itself.
+    // If nothing has started shortly after, let the next tap through to YouTube's play button.
+    setTimeout(() => {
+      const wrap = $('#player-wrap');
+      if (wrap && !wrap.dataset.started && !isPlaying()) wrap.classList.add('tap-through');
+    }, 1500);
   }
 }
 
@@ -278,9 +366,19 @@ function toggleMute() {
   }, 100);
 }
 
+// iPhones can only full-screen <video> elements, so the button is hidden there
+// and turning the phone sideways fills the screen instead (see styles.css).
+const canFullscreen = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+if (!canFullscreen) document.documentElement.classList.add('no-fullscreen');
+
 function toggleFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else $('#player-wrap')?.requestFullscreen();
+  if (!canFullscreen) return;
+  const wrap = $('#player-wrap');
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    (document.exitFullscreen ?? document.webkitExitFullscreen).call(document);
+  } else if (wrap) {
+    (wrap.requestFullscreen ?? wrap.webkitRequestFullscreen).call(wrap);
+  }
 }
 
 function saveProgress(id) {
@@ -334,6 +432,11 @@ function wireControls(id) {
 function onPlayerState(id, state) {
   const playing = state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING;
   const ended = state === YT.PlayerState.ENDED;
+  const wrap = $('#player-wrap');
+  if (playing && wrap) {
+    wrap.dataset.started = '1';
+    wrap.classList.remove('tap-through');
+  }
   // The cover hides YouTube's own pause and end screens, which suggest other videos.
   $('#cover')?.classList.toggle('hidden', playing);
   const bigPlay = $('#big-play');
@@ -382,9 +485,15 @@ function route() {
   markActiveChip();
   if (page === 'watch' && arg) showWatch(arg);
   else if (page === 'c' && arg) showChannel(decodeURIComponent(arg));
+  else if (page === 'channels') showChannels();
   else if (page === 'history') showHistory();
   else showHome();
-  if (page === 'watch') window.scrollTo(0, 0);
+  if (page === 'watch') {
+    // Sideways phones show only the player, so start scrolled to it.
+    const landscapePhone = matchMedia('(orientation: landscape) and (max-height: 500px)').matches;
+    if (landscapePhone) $('#player-wrap')?.scrollIntoView();
+    else window.scrollTo(0, 0);
+  }
 }
 
 window.addEventListener('hashchange', () => {
@@ -402,6 +511,16 @@ view.addEventListener('click', e => {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (action === 'more') {
     shown += PAGE_SIZE;
+    route();
+  } else if (action === 'shuffle') {
+    randomRank = new Map();
+    route();
+  } else if (action === 'sort') {
+    sortKey = e.target.closest('[data-sort]').dataset.sort;
+    try {
+      localStorage.setItem(SORT_KEY, sortKey);
+    } catch {}
+    shown = PAGE_SIZE;
     route();
   } else if (action === 'clear-history' && confirm('Clear watch history on this computer?')) {
     saveHistory([]);
