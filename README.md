@@ -24,7 +24,7 @@ Edit `allowlist.json` and push. The site rebuilds in a minute or two.
 ```
 
 - **channels**: channels whose newest `maxVideosPerChannel` uploads are all included. Give an `id`, a `handle`, or both. `category` sets where the channel shows up. `ages` appears on the Channels page, and `name` and `note` are just for you. A plain string (an @handle, a channel URL, or a `UC…` id) also works.
-- **curateByVideo**: channels where only hand-picked videos are allowed. Nothing from them shows up until you add their videos to `videos`. Those videos then get the channel's category and channel page.
+- **curateByVideo**: channels where only hand-picked videos are allowed. Nothing from them shows up until you add their videos to `videos`. Those videos then get the channel's category and channel page. Add `"titleIncludes": "How It's Made"` (or a list of phrases) to also include any of the channel's 500 newest uploads whose title contains one of the phrases.
 - **videos**: single videos, as a URL or id. A video from a channel not listed above goes under "More videos", in the category you give it or "Other".
 - **blockedVideos**: videos to hide from an allowed channel.
 - **includeShorts**: Shorts and live streams are left out unless this is `true`.

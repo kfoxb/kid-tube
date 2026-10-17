@@ -116,18 +116,18 @@ async function playlistVideoIds(playlistId, max) {
   return ids.slice(0, max);
 }
 
-async function uploads(ch) {
+async function uploads(ch, max = settings.maxVideosPerChannel) {
   if (!settings.includeShorts) {
     // "UULF…" playlists hold a channel's regular uploads without Shorts or streams.
     // It isn't documented, so fall back to all uploads if it ever stops working.
     try {
-      return await playlistVideoIds('UULF' + ch.id.slice(2), settings.maxVideosPerChannel);
+      return await playlistVideoIds('UULF' + ch.id.slice(2), max);
     } catch (err) {
       if (err.status !== 404) throw err;
     }
   }
   try {
-    return await playlistVideoIds(ch.contentDetails.relatedPlaylists.uploads, settings.maxVideosPerChannel);
+    return await playlistVideoIds(ch.contentDetails.relatedPlaylists.uploads, max);
   } catch (err) {
     // Channels with no public uploads have no uploads playlist.
     if (err.status === 404) return [];
@@ -261,6 +261,25 @@ resolved.forEach((ch, i) => {
     console.log(`${ch.snippet.title}: ${uploadLists[i].length} uploads`);
   }
 });
+// Curated channels with "titleIncludes" also pull in any recent upload whose title
+// matches, e.g. only "How It's Made" clips from the Science Channel.
+const TITLE_FILTER_SCAN = 500;
+const normalizeTitle = s => s.toLowerCase().replace(/[‘’`]/g, "'");
+const titleFiltered = resolved
+  .map((ch, i) => ({ ch, e: entries[i] }))
+  .slice(fullEntries.length)
+  .filter(({ ch, e }) => ch && e.titleIncludes);
+await mapLimit(titleFiltered, 4, async ({ ch, e }) => {
+  const titleIncludes = [e.titleIncludes].flat().map(normalizeTitle);
+  for (const id of await uploads(ch, TITLE_FILTER_SCAN)) {
+    if (!wanted.has(id)) wanted.set(id, { from: ch.id, titleIncludes });
+  }
+});
+const matchesTitleFilter = v => {
+  const filter = wanted.get(v.id).titleIncludes;
+  return !filter || filter.some(t => normalizeTitle(v.snippet.title).includes(t));
+};
+
 const fullChannels = resolved.slice(0, fullEntries.length).filter(Boolean);
 const playlistCache = await refreshPlaylists(fullChannels);
 for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
@@ -278,7 +297,7 @@ const pages = await mapLimit(chunks([...wanted.keys()], 50), 8, ids =>
   api('videos', { part: 'snippet,contentDetails,status', id: ids.join(','), maxResults: 50 }));
 const details = pages.flatMap(p => p.items);
 
-const allVideos = details.filter(playable)
+const allVideos = details.filter(playable).filter(matchesTitleFilter)
   .sort((a, b) => b.snippet.publishedAt.localeCompare(a.snippet.publishedAt))
   .map(v => {
     const listed = wanted.get(v.id);
@@ -315,7 +334,7 @@ for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
 }
 
 const skipped = wanted.size - allVideos.length;
-if (skipped) console.log(`Skipped ${skipped} videos that are private, live, age-restricted, or not embeddable.`);
+if (skipped) console.log(`Skipped ${skipped} videos that are private, live, age-restricted, not embeddable, or outside a title filter.`);
 console.log(`${allVideos.length - videos.length} more videos are only in playlists, in site/channels/.`);
 
 await writeFile(

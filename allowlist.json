@@ -100,7 +100,7 @@
     { "id": "UCbHom9wFNErvMGIGLxu2vtg", "name": "Bill Nye", "handle": "@billnye", "category": "Science & Engineering", "ages": "8+", "note": "Not the 90s show archive; check what's there." },
     { "id": "UCHnyfMqiRRG1u-2MsSQLbXA", "name": "Veritasium", "handle": "@veritasium", "category": "Science & Engineering", "ages": "11+", "note": "Great science, but recent thumbnails have gone clickbait." },
     { "id": "UCsXVk37bltHxD1rDPwtNM8Q", "name": "Kurzgesagt", "handle": "@kurzgesagt", "category": "Science & Engineering", "ages": "10+", "note": "Beautiful, but some topics are existential or scary." },
-    { "id": "UCvJiYiBUbw4tmpRSZT2r1Hw", "name": "Science Channel (How It's Made)", "handle": "@sciencechannel", "category": "Making & Trades", "ages": "9+", "note": "TV promo edits; whitelist How It's Made videos only." },
+    { "id": "UCvJiYiBUbw4tmpRSZT2r1Hw", "name": "Science Channel (How It's Made)", "handle": "@sciencechannel", "category": "Making & Trades", "ages": "9+", "note": "TV promo edits; whitelist How It's Made videos only.", "titleIncludes": "How It's Made" },
     { "id": "UC4eYXhJI4-7wSWc8UNRwD4A", "name": "NPR Music (Tiny Desk)", "handle": "@nprmusic", "category": "Music", "ages": "curate", "note": "Many sets have explicit lyrics; pick folk, world, classical, jazz." },
     { "id": "UCvMLMyKPomE6kTTL9Kv8Iww", "name": "Sound Field (PBS)", "handle": "@SoundFieldPBS", "category": "Music", "ages": "12+", "note": "Music history; some episodes discuss explicit lyrics." },
     { "id": "UCWqPRUsJlZaDp-PVbqEch9g", "name": "Smithsonian Channel", "handle": "@SmithsonianChannel", "category": "History, Culture & Places", "ages": "10+", "note": "Dramatic narration; lots of WWII and air disasters." },
