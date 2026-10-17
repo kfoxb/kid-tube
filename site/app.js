@@ -238,10 +238,24 @@ const avatar = s => (s.avatar
   ? `<img src="${esc(s.avatar)}" alt="" loading="lazy">`
   : `<span class="avatar-blank">${esc(s.title[0])}</span>`);
 
-function showChannel(source) {
+// A channel's page: all its videos (newest first) or one of its playlists (in the channel's order).
+function showChannel(source, playlistId) {
   const channel = channelList().find(s => s.key === source);
-  const top = channel ? `<a class="crumb" href="${catHref(channel.category)}">‹ ${esc(channel.category)}</a>` : '';
-  showList(sourceTitle(source) || 'Videos', data.videos.filter(v => v.source === source), { top });
+  const playlists = data.channels.find(c => c.id === source)?.playlists ?? [];
+  const playlist = playlists.find(p => p.id === playlistId);
+
+  const tabs = playlists.length ? `<div class="playlist-tabs">
+      <a class="pill${playlist ? '' : ' active'}" href="${channelHref(source)}">All videos</a>
+      ${playlists.map(p => `<a class="pill${p === playlist ? ' active' : ''}"
+        href="${channelHref(source)}/${encodeURIComponent(p.id)}">${esc(p.title)}</a>`).join('')}
+    </div>` : '';
+  const top = `${channel ? `<a class="crumb" href="${catHref(channel.category)}">‹ ${esc(channel.category)}</a>` : ''}
+    <h1 class="page-title">${esc(sourceTitle(source) || 'Videos')}</h1>${tabs}`;
+
+  const videos = playlist
+    ? playlist.videos.map(id => byId.get(id)).filter(Boolean)
+    : data.videos.filter(v => v.source === source);
+  showList(playlist ? playlist.title : 'Newest videos', videos, { top });
 }
 
 function showCategory(cat) {
@@ -526,10 +540,10 @@ function teardownPlayer() {
 
 function route() {
   teardownPlayer();
-  const [, page, arg] = location.hash.split('/');
+  const [, page, arg, sub] = location.hash.split('/');
   markActiveChip();
   if (page === 'watch' && arg) showWatch(arg);
-  else if (page === 'c' && arg) showChannel(decodeURIComponent(arg));
+  else if (page === 'c' && arg) showChannel(decodeURIComponent(arg), sub && decodeURIComponent(sub));
   else if (page === 'cat' && arg) showCategory(decodeURIComponent(arg));
   else if (page === 'channels') showChannels();
   else if (page === 'history') showHistory();

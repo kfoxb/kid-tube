@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Reads allowlist.json, asks the YouTube Data API for each channel's uploads
 // and each listed video, and writes site/videos.json for the web app.
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 const KEY = process.env.YOUTUBE_API_KEY;
@@ -14,6 +14,15 @@ if (!KEY) {
 
 const allowlist = JSON.parse(await readFile(new URL('allowlist.json', root), 'utf8'));
 const settings = { maxVideosPerChannel: 100, includeShorts: false, ...allowlist.settings };
+
+// Playlists cost far more API quota than uploads, so they're kept between runs in
+// .cache/ (restored by the workflow) and each channel's are refreshed every few days,
+// stalest first, within a per-run budget of API calls.
+const PLAYLIST_CACHE = new URL('.cache/playlists.json', root);
+const PLAYLIST_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+const PLAYLIST_CALL_BUDGET = 2000;
+const MAX_PLAYLISTS_PER_CHANNEL = 25;
+const MAX_PLAYLIST_PAGES = 4; // 50 videos per page
 
 // Things worth fixing in allowlist.json that shouldn't stop the rest of the site from updating.
 // They're printed here and listed in the site footer.
@@ -126,6 +135,77 @@ async function uploads(ch) {
   }
 }
 
+// Returns the channel's playlists (up to MAX_PLAYLISTS_PER_CHANNEL with 2+ videos)
+// and how many API calls that took. Only videos the channel itself uploaded are kept,
+// since playlists can include anyone's videos.
+async function channelPlaylists(channelId) {
+  let calls = 0;
+  const lists = [];
+  let pageToken;
+  do {
+    const page = await api('playlists', {
+      part: 'snippet,contentDetails', channelId, maxResults: 50, ...(pageToken && { pageToken }),
+    });
+    calls++;
+    lists.push(...page.items.filter(p => p.contentDetails.itemCount >= 2));
+    pageToken = page.nextPageToken;
+  } while (pageToken && lists.length < MAX_PLAYLISTS_PER_CHANNEL);
+
+  const playlists = [];
+  for (const p of lists.slice(0, MAX_PLAYLISTS_PER_CHANNEL)) {
+    const videos = [];
+    let token;
+    let pages = 0;
+    do {
+      const page = await api('playlistItems', {
+        part: 'snippet,contentDetails', playlistId: p.id, maxResults: 50, ...(token && { pageToken: token }),
+      });
+      calls++;
+      pages++;
+      for (const item of page.items) {
+        if (item.snippet.videoOwnerChannelId === channelId) videos.push(item.contentDetails.videoId);
+      }
+      token = page.nextPageToken;
+    } while (token && pages < MAX_PLAYLIST_PAGES);
+    if (videos.length) playlists.push({ id: p.id, title: p.snippet.title, videos });
+  }
+  return { playlists, calls };
+}
+
+async function refreshPlaylists(channelList) {
+  let cache = {};
+  try {
+    cache = JSON.parse(await readFile(PLAYLIST_CACHE, 'utf8'));
+  } catch {}
+
+  const now = Date.now();
+  const stale = channelList
+    .filter(ch => !(now - (cache[ch.id]?.fetchedAt ?? 0) < PLAYLIST_TTL_MS))
+    .sort((a, b) => (cache[a.id]?.fetchedAt ?? 0) - (cache[b.id]?.fetchedAt ?? 0));
+
+  let budget = PLAYLIST_CALL_BUDGET;
+  let refreshed = 0;
+  await mapLimit(stale, 6, async ch => {
+    if (budget <= 0) return;
+    try {
+      const { playlists, calls } = await channelPlaylists(ch.id);
+      budget -= calls;
+      cache[ch.id] = { fetchedAt: Date.now(), playlists };
+    } catch (err) {
+      if (err.status !== 404) throw err;
+      cache[ch.id] = { fetchedAt: Date.now(), playlists: [] };
+    }
+    refreshed++;
+  });
+  console.log(`Playlists: refreshed ${refreshed} channels, ${stale.length - refreshed} left for later runs, ${PLAYLIST_CALL_BUDGET - budget} API calls.`);
+
+  // Keep only channels still in the allowlist.
+  const current = Object.fromEntries(channelList.filter(ch => cache[ch.id]).map(ch => [ch.id, cache[ch.id]]));
+  await mkdir(new URL('.cache/', root), { recursive: true });
+  await writeFile(PLAYLIST_CACHE, JSON.stringify(current));
+  return current;
+}
+
 function playable(v) {
   return v.status.privacyStatus !== 'private'
     && v.status.uploadStatus === 'processed'
@@ -179,6 +259,14 @@ resolved.forEach((ch, i) => {
     console.log(`${ch.snippet.title}: ${uploadLists[i].length} uploads`);
   }
 });
+const fullChannels = resolved.slice(0, fullEntries.length).filter(Boolean);
+const playlistCache = await refreshPlaylists(fullChannels);
+for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
+  for (const p of playlists) {
+    for (const id of p.videos) if (!wanted.has(id)) wanted.set(id, { from: channelId });
+  }
+}
+
 for (const v of videoEntries) wanted.set(v.id, { ...wanted.get(v.id), category: v.category });
 for (const id of blocked) wanted.delete(id);
 
@@ -201,6 +289,17 @@ const videos = details.filter(playable).map(v => {
     duration: seconds(v.contentDetails.duration),
   };
 }).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+
+// Attach playlists to their channels, keeping only videos that made it onto the site.
+const onSite = new Set(videos.map(v => v.id));
+for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
+  const channel = channels.get(channelId);
+  if (!channel) continue;
+  const kept = playlists
+    .map(p => ({ id: p.id, title: p.title, videos: p.videos.filter(id => onSite.has(id)) }))
+    .filter(p => p.videos.length);
+  if (kept.length) channel.playlists = kept;
+}
 
 const skipped = wanted.size - videos.length;
 if (skipped) console.log(`Skipped ${skipped} videos that are private, live, age-restricted, or not embeddable.`);

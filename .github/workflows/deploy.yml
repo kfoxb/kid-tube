@@ -27,6 +27,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Playlists are cached between runs to save YouTube API quota.
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: youtube-${{ github.run_id }}
+          restore-keys: youtube-
       - name: Fetch allowed videos
         run: node scripts/fetch-videos.mjs
         env:

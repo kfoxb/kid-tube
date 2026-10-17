@@ -1,2 +1,3 @@
 site/videos.json
 .DS_Store
+.cache/

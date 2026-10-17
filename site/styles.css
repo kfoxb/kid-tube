@@ -310,6 +310,30 @@ h2 {
   font-size: 1.6rem;
 }
 
+/* A channel's playlists, as filter buttons above its videos. */
+.playlist-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.playlist-tabs .pill.active {
+  background: var(--text);
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  .playlist-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-right: -16px;
+    padding-right: 16px;
+    scrollbar-width: none;
+  }
+  .playlist-tabs .pill { flex: none; }
+}
+
 .chip-divider {
   flex: none;
   width: 2px;
