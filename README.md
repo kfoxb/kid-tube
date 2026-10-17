@@ -8,19 +8,30 @@ Edit `allowlist.json` and push. The site rebuilds in a minute or two.
 
 ```json
 {
-  "settings": { "maxVideosPerChannel": 200, "includeShorts": false },
-  "channels": ["@SesameStreet", "https://www.youtube.com/@PBSKIDS", "UCxxxxxxxxxxxxxxxxxxxxxx"],
-  "videos": ["https://www.youtube.com/watch?v=xxxxxxxxxxx", "xxxxxxxxxxx"],
+  "settings": { "maxVideosPerChannel": 100, "includeShorts": false },
+  "channels": [
+    { "id": "UC…", "name": "Deep Look", "handle": "@KQEDDeepLook", "category": "Nature & Animals", "ages": "5+", "note": "…" }
+  ],
+  "curateByVideo": [
+    { "id": "UC…", "name": "NASA", "handle": "@NASA", "category": "Science & Engineering" }
+  ],
+  "videos": [
+    "https://www.youtube.com/watch?v=xxxxxxxxxxx",
+    { "id": "xxxxxxxxxxx", "category": "Music" }
+  ],
   "blockedVideos": ["xxxxxxxxxxx"]
 }
 ```
 
-- **channels**: an @handle, a channel URL, or a `UC…` channel id. The newest `maxVideosPerChannel` uploads are included.
-- **videos**: single videos from any channel, as a URL or id.
+- **channels**: channels whose newest `maxVideosPerChannel` uploads are all included. Give an `id`, a `handle`, or both. `category` sets where the channel shows up. `ages` appears on the Channels page, and `name` and `note` are just for you. A plain string (an @handle, a channel URL, or a `UC…` id) also works.
+- **curateByVideo**: channels where only hand-picked videos are allowed. Nothing from them shows up until you add their videos to `videos`. Those videos then get the channel's category and channel page.
+- **videos**: single videos, as a URL or id. A video from a channel not listed above goes under "More videos", in the category you give it or "Other".
 - **blockedVideos**: videos to hide from an allowed channel.
 - **includeShorts**: Shorts and live streams are left out unless this is `true`.
 
-Private, age-restricted, live, and non-embeddable videos are skipped automatically. If a channel can't be found, the build fails and the live site stays as it was. GitHub emails you when that happens.
+Categories appear in the order they first appear in this file.
+
+Private, age-restricted, live, and non-embeddable videos are skipped automatically. If a channel or entry can't be found, the rest of the list still updates. The problem is listed in the site's footer and in the Action's log. If the API itself fails (a bad key, or the daily quota is used up), the build fails, the live site stays as it was, and GitHub emails you.
 
 New uploads from allowed channels appear on their own, since the list refreshes every 6 hours.
 

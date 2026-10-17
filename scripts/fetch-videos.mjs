@@ -158,7 +158,10 @@ const entries = [...fullEntries, ...curatedEntries];
 const resolved = await resolveChannels(entries);
 
 const channels = new Map();
-const wanted = new Map(); // video id -> category given in allowlist "videos", if any
+// video id -> { from: channel whose uploads listed it } or { category } from allowlist "videos".
+// Uploads can include videos owned by another channel (an artist's VEVO channel, say),
+// so videos are grouped under the channel they were listed by, not their owner.
+const wanted = new Map();
 const uploadLists = await mapLimit(resolved.slice(0, fullEntries.length), 8, ch => (ch ? uploads(ch) : []));
 
 resolved.forEach((ch, i) => {
@@ -172,11 +175,11 @@ resolved.forEach((ch, i) => {
     ...(e.ages && { ages: e.ages }),
   });
   if (i < fullEntries.length) {
-    for (const id of uploadLists[i]) wanted.set(id, undefined);
+    for (const id of uploadLists[i]) wanted.set(id, { from: ch.id });
     console.log(`${ch.snippet.title}: ${uploadLists[i].length} uploads`);
   }
 });
-for (const v of videoEntries) wanted.set(v.id, v.category);
+for (const v of videoEntries) wanted.set(v.id, { ...wanted.get(v.id), category: v.category });
 for (const id of blocked) wanted.delete(id);
 
 const pages = await mapLimit(chunks([...wanted.keys()], 50), 8, ids =>
@@ -184,15 +187,16 @@ const pages = await mapLimit(chunks([...wanted.keys()], 50), 8, ids =>
 const details = pages.flatMap(p => p.items);
 
 const videos = details.filter(playable).map(v => {
-  const channel = channels.get(v.snippet.channelId);
+  const listed = wanted.get(v.id);
+  const channel = channels.get(listed.from ?? v.snippet.channelId);
   return {
     id: v.id,
     title: v.snippet.title,
     channelId: v.snippet.channelId,
-    channelTitle: v.snippet.channelTitle,
+    channelTitle: channel?.title ?? v.snippet.channelTitle,
     // Videos listed on their own, from channels not in the allowlist, are grouped together.
     source: channel ? channel.id : 'extra',
-    category: wanted.get(v.id) ?? channel?.category ?? 'Other',
+    category: listed.category ?? channel?.category ?? 'Other',
     publishedAt: v.snippet.publishedAt,
     duration: seconds(v.contentDetails.duration),
   };
