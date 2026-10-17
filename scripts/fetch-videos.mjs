@@ -13,8 +13,11 @@ if (!KEY) {
 }
 
 const allowlist = JSON.parse(await readFile(new URL('allowlist.json', root), 'utf8'));
-const settings = { maxVideosPerChannel: 200, includeShorts: false, ...allowlist.settings };
-const blocked = new Set((allowlist.blockedVideos ?? []).map(parseVideoId));
+const settings = { maxVideosPerChannel: 100, includeShorts: false, ...allowlist.settings };
+
+// Things worth fixing in allowlist.json that shouldn't stop the rest of the site from updating.
+// They're printed here and listed in the site footer.
+const problems = [];
 
 async function api(endpoint, params) {
   const url = new URL(`${API}/${endpoint}`);
@@ -29,13 +32,31 @@ async function api(endpoint, params) {
   return body;
 }
 
-// Accepts "@handle", "UC…" ids, or any youtube.com channel URL.
+// Runs fn over items, at most `limit` at a time.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+const chunks = (list, size) => Array.from({ length: Math.ceil(list.length / size) }, (_, i) => list.slice(i * size, (i + 1) * size));
+
+// A channel entry is either a string (an @handle, a UC… id, or a channel URL)
+// or an object with id and/or handle plus optional category, ages, and note.
 function parseChannel(entry) {
+  if (typeof entry === 'object') return { ...entry, id: entry.id?.trim(), handle: entry.handle?.trim() };
   const s = entry.trim();
   const id = s.match(/(?:^|\/)(UC[\w-]{22})(?=$|[/?#])/);
   if (id) return { id: id[1] };
   const handle = s.match(/@([^/?#\s]+)/);
-  if (handle) return { forHandle: '@' + decodeURIComponent(handle[1]) };
+  if (handle) return { handle: '@' + decodeURIComponent(handle[1]) };
   throw new Error(`Can't read channel "${entry}". Use an @handle, a UC… channel id, or a channel URL.`);
 }
 
@@ -54,6 +75,25 @@ function seconds(iso) {
   return ((d * 24 + h) * 60 + min) * 60 + s;
 }
 
+// Looks channels up by id in batches of 50, falling back to the handle for any
+// entry without an id or whose id didn't match a channel.
+async function resolveChannels(entries) {
+  const found = new Map();
+  for (const batch of chunks(entries.filter(e => e.id).map(e => e.id), 50)) {
+    const { items = [] } = await api('channels', { part: 'snippet,contentDetails', id: batch.join(','), maxResults: 50 });
+    for (const ch of items) found.set(ch.id, ch);
+  }
+  return mapLimit(entries, 8, async e => {
+    if (e.id && found.has(e.id)) return found.get(e.id);
+    if (e.handle) {
+      const { items = [] } = await api('channels', { part: 'snippet,contentDetails', forHandle: e.handle });
+      if (items[0]) return items[0];
+    }
+    problems.push(`Channel not found: ${e.name ?? e.handle ?? e.id}`);
+    return null;
+  });
+}
+
 async function playlistVideoIds(playlistId, max) {
   const ids = [];
   let pageToken;
@@ -67,15 +107,23 @@ async function playlistVideoIds(playlistId, max) {
   return ids.slice(0, max);
 }
 
-async function videoDetails(ids) {
-  const out = [];
-  for (let i = 0; i < ids.length; i += 50) {
-    const page = await api('videos', {
-      part: 'snippet,contentDetails,status', id: ids.slice(i, i + 50).join(','), maxResults: 50,
-    });
-    out.push(...page.items);
+async function uploads(ch) {
+  if (!settings.includeShorts) {
+    // "UULF…" playlists hold a channel's regular uploads without Shorts or streams.
+    // It isn't documented, so fall back to all uploads if it ever stops working.
+    try {
+      return await playlistVideoIds('UULF' + ch.id.slice(2), settings.maxVideosPerChannel);
+    } catch (err) {
+      if (err.status !== 404) throw err;
+    }
   }
-  return out;
+  try {
+    return await playlistVideoIds(ch.contentDetails.relatedPlaylists.uploads, settings.maxVideosPerChannel);
+  } catch (err) {
+    // Channels with no public uploads have no uploads playlist.
+    if (err.status === 404) return [];
+    throw err;
+  }
 }
 
 function playable(v) {
@@ -86,71 +134,76 @@ function playable(v) {
     && v.contentDetails.contentRating?.ytRating !== 'ytAgeRestricted';
 }
 
-const errors = [];
-const channels = [];
-const wanted = new Set();
-
-for (const entry of allowlist.channels ?? []) {
-  try {
-    const { items = [] } = await api('channels', { part: 'snippet,contentDetails', ...parseChannel(entry) });
-    const ch = items[0];
-    if (!ch) throw new Error('channel not found');
-    if (channels.some(c => c.id === ch.id)) continue;
-
-    let ids;
-    if (!settings.includeShorts) {
-      // "UULF…" playlists hold a channel's regular uploads without Shorts or streams.
-      // It isn't documented, so fall back to all uploads if it ever stops working.
-      try {
-        ids = await playlistVideoIds('UULF' + ch.id.slice(2), settings.maxVideosPerChannel);
-      } catch (err) {
-        if (err.status !== 404) throw err;
-        console.warn(`  ${ch.snippet.title}: no Shorts-free list, using all uploads`);
-      }
+function parseAll(list, parse) {
+  return (list ?? []).flatMap(entry => {
+    try {
+      return [parse(entry)];
+    } catch (err) {
+      problems.push(err.message);
+      return [];
     }
-    ids ??= await playlistVideoIds(ch.contentDetails.relatedPlaylists.uploads, settings.maxVideosPerChannel);
+  });
+}
 
-    channels.push({ id: ch.id, title: ch.snippet.title, avatar: ch.snippet.thumbnails?.medium?.url ?? ch.snippet.thumbnails?.default?.url ?? '' });
-    ids.forEach(id => wanted.add(id));
-    console.log(`${ch.snippet.title}: ${ids.length} uploads`);
-  } catch (err) {
-    errors.push(`Channel "${entry}": ${err.message}`);
+// "channels" include their recent uploads; "curateByVideo" channels only show
+// the videos listed under "videos", but still get a category and a channel page.
+const fullEntries = parseAll(allowlist.channels, parseChannel);
+const curatedEntries = parseAll(allowlist.curateByVideo, parseChannel);
+const videoEntries = parseAll(allowlist.videos, e => (typeof e === 'object'
+  ? { id: parseVideoId(e.id ?? e.url), category: e.category }
+  : { id: parseVideoId(e) }));
+const blocked = new Set(parseAll(allowlist.blockedVideos, parseVideoId));
+
+const entries = [...fullEntries, ...curatedEntries];
+const resolved = await resolveChannels(entries);
+
+const channels = new Map();
+const wanted = new Map(); // video id -> category given in allowlist "videos", if any
+const uploadLists = await mapLimit(resolved.slice(0, fullEntries.length), 8, ch => (ch ? uploads(ch) : []));
+
+resolved.forEach((ch, i) => {
+  if (!ch || channels.has(ch.id)) return;
+  const e = entries[i];
+  channels.set(ch.id, {
+    id: ch.id,
+    title: ch.snippet.title,
+    avatar: ch.snippet.thumbnails?.medium?.url ?? ch.snippet.thumbnails?.default?.url ?? '',
+    category: e.category ?? 'Other',
+    ...(e.ages && { ages: e.ages }),
+  });
+  if (i < fullEntries.length) {
+    for (const id of uploadLists[i]) wanted.set(id, undefined);
+    console.log(`${ch.snippet.title}: ${uploadLists[i].length} uploads`);
   }
-}
-
-for (const entry of allowlist.videos ?? []) {
-  try {
-    wanted.add(parseVideoId(entry));
-  } catch (err) {
-    errors.push(err.message);
-  }
-}
-
-if (errors.length) {
-  console.error('\nFix these in allowlist.json:\n' + errors.map(e => `  - ${e}`).join('\n'));
-  process.exit(1);
-}
-
+});
+for (const v of videoEntries) wanted.set(v.id, v.category);
 for (const id of blocked) wanted.delete(id);
 
-const details = await videoDetails([...wanted]);
-const channelIds = new Set(channels.map(c => c.id));
-const videos = details.filter(playable).map(v => ({
-  id: v.id,
-  title: v.snippet.title,
-  channelId: v.snippet.channelId,
-  channelTitle: v.snippet.channelTitle,
-  // Videos listed on their own, from channels not in the allowlist, are grouped together.
-  source: channelIds.has(v.snippet.channelId) ? v.snippet.channelId : 'extra',
-  publishedAt: v.snippet.publishedAt,
-  duration: seconds(v.contentDetails.duration),
-})).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+const pages = await mapLimit(chunks([...wanted.keys()], 50), 8, ids =>
+  api('videos', { part: 'snippet,contentDetails,status', id: ids.join(','), maxResults: 50 }));
+const details = pages.flatMap(p => p.items);
+
+const videos = details.filter(playable).map(v => {
+  const channel = channels.get(v.snippet.channelId);
+  return {
+    id: v.id,
+    title: v.snippet.title,
+    channelId: v.snippet.channelId,
+    channelTitle: v.snippet.channelTitle,
+    // Videos listed on their own, from channels not in the allowlist, are grouped together.
+    source: channel ? channel.id : 'extra',
+    category: wanted.get(v.id) ?? channel?.category ?? 'Other',
+    publishedAt: v.snippet.publishedAt,
+    duration: seconds(v.contentDetails.duration),
+  };
+}).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
 
 const skipped = wanted.size - videos.length;
 if (skipped) console.log(`Skipped ${skipped} videos that are private, live, age-restricted, or not embeddable.`);
 
 await writeFile(
   new URL('site/videos.json', root),
-  JSON.stringify({ generatedAt: new Date().toISOString(), channels, videos }),
+  JSON.stringify({ generatedAt: new Date().toISOString(), problems, channels: [...channels.values()], videos }),
 );
-console.log(`Wrote ${videos.length} videos from ${channels.length} channels.`);
+console.log(`Wrote ${videos.length} videos from ${channels.size} channels.`);
+if (problems.length) console.warn(`\nCheck allowlist.json:\n${problems.map(p => `  - ${p}`).join('\n')}`);

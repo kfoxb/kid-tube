@@ -144,12 +144,6 @@ h2 {
 
 .list-head h2 { margin-right: auto; }
 
-.sorts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .pill {
   padding: 6px 14px;
   border: 0;
@@ -161,9 +155,62 @@ h2 {
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
 }
 
-.pill.active {
-  background: var(--text);
+/* Bookmark button: a small circle in the corner of each thumbnail. */
+.save-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+}
+
+.save-btn svg {
+  width: 20px;
+  height: 20px;
+  fill: #fff;
+}
+
+.save-btn.saved { background: var(--accent); }
+
+.save-btn:hover { background: rgb(0 0 0 / 0.75); }
+.save-btn.saved:hover { background: var(--accent); filter: brightness(1.08); }
+
+/* The same button on the watch page, with a label. */
+.save-btn.save-watch {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  height: 40px;
+  padding: 0 16px 0 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 800;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+}
+
+.save-btn.save-watch svg { fill: var(--accent); }
+
+.save-btn.save-watch.saved {
+  background: var(--accent);
   color: #fff;
+}
+
+.save-btn.save-watch.saved svg { fill: #fff; }
+
+.watch-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .channel-grid {
@@ -203,6 +250,82 @@ h2 {
   color: var(--accent);
   font-size: 2.4rem;
   font-weight: 800;
+}
+
+.page-title {
+  margin: 14px 0 6px;
+  font-size: 1.7rem;
+}
+
+.crumb {
+  display: inline-block;
+  margin-top: 10px;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.group-head span {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+/* Row of a category's channels above its videos. */
+.channel-strip {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding: 8px 0 12px;
+}
+
+.mini-channel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  width: 92px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.mini-channel img,
+.mini-channel .avatar-blank {
+  width: 64px;
+  height: 64px;
+  margin: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  font-size: 1.6rem;
+}
+
+.chip-divider {
+  flex: none;
+  width: 2px;
+  margin: 6px 4px;
+  border-radius: 1px;
+  background: rgb(0 0 0 / 0.1);
+}
+
+#updated details { margin-top: 6px; }
+#updated summary { cursor: pointer; }
+
+#updated ul {
+  display: inline-block;
+  margin: 6px 0 0;
+  padding-left: 18px;
+  text-align: left;
 }
 
 .channel-name {
@@ -541,8 +664,9 @@ h2 {
 
   .watch { margin: 0 -16px; }
   .player-wrap { border-radius: 0; }
-  .watch-title, .watch-channel, .watch > h2, .watch > .grid { margin-left: 16px; margin-right: 16px; }
-  .watch-channel { display: inline-block; }
+  .watch-title, .watch-meta, .watch > h2, .watch > .grid { margin-left: 16px; margin-right: 16px; }
+  .save-btn { width: 32px; height: 32px; top: 6px; right: 6px; }
+  .save-btn svg { width: 18px; height: 18px; }
   .watch-title { font-size: 1.2rem; }
   .controls { flex-wrap: wrap; justify-content: space-between; padding: 8px 10px; }
   .controls button { width: 44px; height: 44px; }

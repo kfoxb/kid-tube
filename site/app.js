@@ -3,7 +3,7 @@
 
 const HISTORY_KEY = 'kidtube.history';
 const HISTORY_MAX = 200;
-const SORT_KEY = 'kidtube.sort';
+const SAVED_KEY = 'kidtube.watchlist';
 const PAGE_SIZE = 60;
 const ROW_SIZE = 12;
 const SAVE_EVERY_MS = 5000;
@@ -29,6 +29,8 @@ const icons = {
   volume: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>',
   muted: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9zm18.4 6L19 12.6 21.4 10 20 8.6l-2.4 2.4-2.4-2.4L13.8 10l2.4 2.6-2.4 2.4 1.4 1.4 2.4-2.4 2.4 2.4z"/></svg>',
   full: '<svg viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5zm9 0h5v5h-2V7h-3zM5 14h2v3h3v2H5zm12 0h2v5h-5v-2h3z"/></svg>',
+  save: '<svg viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2zm0 15-5-2.2L7 18V5h10z"/></svg>',
+  saved: '<svg viewBox="0 0 24 24"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-3 7 3V5a2 2 0 0 0-2-2z"/></svg>',
   exitFull: '<svg viewBox="0 0 24 24"><path d="M8 5h2v5H5V8h3zm6 0h2v3h3v2h-5zM5 14h5v5H8v-3H5zm9 0h5v2h-3v3h-2z"/></svg>',
 };
 
@@ -98,11 +100,43 @@ function recordProgress(id, position, duration) {
 }
 
 const historyMap = () => new Map(loadHistory().map(h => [h.id, h]));
+
+// ---------- watchlist (also kept on this device only) ----------
+
+function loadSaved() {
+  try {
+    return JSON.parse(localStorage.getItem(SAVED_KEY)) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function toggleSaved(id) {
+  const list = loadSaved();
+  const next = list.includes(id) ? list.filter(x => x !== id) : [id, ...list];
+  try {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+function saveButton(id, saved, onWatchPage = false) {
+  const label = saved ? 'Remove from watchlist' : 'Add to watchlist';
+  const text = onWatchPage ? `<span>${saved ? 'Saved' : 'Save'}</span>` : '';
+  return `<button class="save-btn${onWatchPage ? ' save-watch' : ''}${saved ? ' saved' : ''}"
+    data-action="save" data-id="${id}" aria-label="${label}" title="${label}">${saved ? icons.saved : icons.save}${text}</button>`;
+}
+
+function updateSaveButtons(id) {
+  const saved = loadSaved().includes(id);
+  for (const btn of document.querySelectorAll(`.save-btn[data-id="${id}"]`)) {
+    btn.outerHTML = saveButton(id, saved, btn.classList.contains('save-watch'));
+  }
+}
 const inProgress = h => h.position > 10 && h.position < h.duration - 20;
 
 // ---------- list views ----------
 
-function card(v, hist) {
+function card(v, hist, saved) {
   const h = hist.get(v.id);
   const pct = h?.duration ? Math.min(100, (h.position / h.duration) * 100) : 0;
   return `<a class="card" href="#/watch/${v.id}">
@@ -110,6 +144,7 @@ function card(v, hist) {
       ${frameImg(v.id, 'mq')}
       <span class="duration">${fmtTime(v.duration)}</span>
       ${pct ? `<span class="watched" style="width:${pct}%"></span>` : ''}
+      ${saveButton(v.id, saved.has(v.id))}
     </div>
     <div class="card-title">${esc(v.title)}</div>
     <div class="card-channel">${esc(v.channelTitle)}</div>
@@ -124,50 +159,27 @@ function rank(v) {
   return randomRank.get(v.id);
 }
 
-const SORTS = {
-  newest: { label: 'Newest', compare: (a, b) => b.publishedAt.localeCompare(a.publishedAt) },
-  random: { label: 'Random', compare: (a, b) => rank(a) - rank(b) },
-  short: { label: 'Shortest', compare: (a, b) => a.duration - b.duration },
-  long: { label: 'Longest', compare: (a, b) => b.duration - a.duration },
-  oldest: { label: 'Oldest', compare: (a, b) => a.publishedAt.localeCompare(b.publishedAt) },
-};
-
-let sortKey = (() => {
-  try {
-    const saved = localStorage.getItem(SORT_KEY);
-    return saved in SORTS ? saved : 'newest';
-  } catch {
-    return 'newest';
-  }
-})();
-
-const sortBy = (videos, key) => [...videos].sort(SORTS[key].compare);
-
 function grid(videos, hist) {
-  return `<div class="grid">${videos.map(v => card(v, hist)).join('')}</div>`;
+  const saved = new Set(loadSaved());
+  return `<div class="grid">${videos.map(v => card(v, hist, saved)).join('')}</div>`;
 }
 
 function row(heading, videos, hist, action = '') {
   if (!videos.length) return '';
+  const saved = new Set(loadSaved());
   return `<section>
     <div class="list-head"><h2>${esc(heading)}</h2>${action}</div>
-    <div class="row">${videos.map(v => card(v, hist)).join('')}</div>
+    <div class="row">${videos.map(v => card(v, hist, saved)).join('')}</div>
   </section>`;
 }
 
-function sortBar() {
-  return `<div class="sorts">${Object.entries(SORTS).map(([key, s]) =>
-    `<button class="pill${key === sortKey ? ' active' : ''}" data-action="sort" data-sort="${key}">${s.label}</button>`,
-  ).join('')}</div>`;
-}
-
-function showList(heading, videos, { top = '', emptyText = 'No videos here yet.', sortable = false } = {}) {
+// Lists stay in the order given; videos.json is already newest first.
+function showList(heading, videos, { top = '', emptyText = 'No videos here yet.' } = {}) {
   const hist = historyMap();
   const q = search.value.trim().toLowerCase();
-  let list = q
+  const list = q
     ? videos.filter(v => `${v.title} ${v.channelTitle}`.toLowerCase().includes(q))
     : videos;
-  if (sortable) list = sortBy(list, sortKey);
 
   let body;
   if (!list.length) {
@@ -178,14 +190,15 @@ function showList(heading, videos, { top = '', emptyText = 'No videos here yet.'
   }
   const title = q ? `Results for “${search.value.trim()}”` : heading;
   view.innerHTML = `${q ? '' : top}
-    <div class="list-head"><h2>${esc(title)}</h2>${sortable && list.length > 1 ? sortBar() : ''}</div>
+    <h2>${esc(title)}</h2>
     ${body}`;
 }
 
 function showHome() {
   const hist = historyMap();
   const history = loadHistory();
-  const shuffled = sortBy(data.videos, 'random');
+  const shuffled = [...data.videos].sort((a, b) => rank(a) - rank(b));
+  const watchlist = loadSaved().map(id => byId.get(id)).filter(Boolean);
 
   const resume = history.filter(inProgress).map(h => byId.get(h.id)).filter(Boolean).slice(0, ROW_SIZE);
 
@@ -193,37 +206,67 @@ function showHome() {
   const unseen = shuffled.filter(v => !hist.has(v.id));
   const picks = [...unseen, ...shuffled.filter(v => hist.has(v.id))].slice(0, ROW_SIZE);
 
-  const top = row('Keep watching', resume, hist)
+  const top = row('Watchlist', watchlist, hist)
+    + row('Keep watching', resume, hist)
     + row('Random picks', picks, hist, '<button class="pill" data-action="shuffle">Shuffle</button>');
-  showList('All videos', data.videos, { top, sortable: true });
+  showList('All videos', data.videos, { top });
 }
 
-function showChannel(source) {
-  showList(sourceTitle(source) || 'Videos', data.videos.filter(v => v.source === source), { sortable: true });
+const catHref = cat => `#/cat/${encodeURIComponent(cat)}`;
+const channelHref = key => `#/c/${encodeURIComponent(key)}`;
+
+// Categories in the order they first appear in allowlist.json, leaving out empty ones.
+function categories() {
+  const used = new Set(data.videos.map(v => v.category));
+  return [...new Set([...data.channels.map(c => c.category), 'Other'])].filter(c => used.has(c));
 }
 
+// Channels (plus the "More videos" group of standalone videos) that have at least one video.
 function channelList() {
   const counts = new Map();
   for (const v of data.videos) counts.set(v.source, (counts.get(v.source) ?? 0) + 1);
   return [
-    ...data.channels.map(c => ({ key: c.id, title: c.title, avatar: c.avatar })),
-    { key: 'extra', title: 'More videos', avatar: '' },
+    ...data.channels.map(c => ({ key: c.id, title: c.title, avatar: c.avatar, category: c.category, ages: c.ages })),
+    { key: 'extra', title: 'More videos', avatar: '', category: 'Other' },
   ]
     .map(s => ({ ...s, count: counts.get(s.key) ?? 0 }))
     .filter(s => s.count)
     .sort((a, b) => a.title.localeCompare(b.title));
 }
 
+const avatar = s => (s.avatar
+  ? `<img src="${esc(s.avatar)}" alt="" loading="lazy">`
+  : `<span class="avatar-blank">${esc(s.title[0])}</span>`);
+
+function showChannel(source) {
+  const channel = channelList().find(s => s.key === source);
+  const top = channel ? `<a class="crumb" href="${catHref(channel.category)}">‹ ${esc(channel.category)}</a>` : '';
+  showList(sourceTitle(source) || 'Videos', data.videos.filter(v => v.source === source), { top });
+}
+
+function showCategory(cat) {
+  const strip = channelList().filter(s => s.category === cat).map(s =>
+    `<a class="mini-channel" href="${channelHref(s.key)}">${avatar(s)}<span>${esc(s.title)}</span></a>`).join('');
+  const top = `<h1 class="page-title">${esc(cat)}</h1><div class="channel-strip">${strip}</div>`;
+  showList('Newest videos', data.videos.filter(v => v.category === cat), { top });
+}
+
 function showChannels() {
   const q = search.value.trim().toLowerCase();
-  const list = channelList().filter(s => s.title.toLowerCase().includes(q));
-  const tiles = list.map(s => `<a class="channel-card" href="#/c/${encodeURIComponent(s.key)}">
-      ${s.avatar ? `<img src="${esc(s.avatar)}" alt="" loading="lazy">` : `<span class="avatar-blank">${esc(s.title[0])}</span>`}
+  const all = channelList().filter(s => s.title.toLowerCase().includes(q));
+  const groups = categories()
+    .map(cat => ({ cat, list: all.filter(s => s.category === cat) }))
+    .filter(g => g.list.length);
+  const tile = s => `<a class="channel-card" href="${channelHref(s.key)}">
+      ${avatar(s)}
       <span class="channel-name">${esc(s.title)}</span>
-      <span class="channel-count">${s.count} video${s.count === 1 ? '' : 's'}</span>
-    </a>`).join('');
-  view.innerHTML = `<h2>Channels</h2>${list.length
-    ? `<div class="channel-grid">${tiles}</div>`
+      <span class="channel-count">${s.count} video${s.count === 1 ? '' : 's'}${s.ages ? ` · ages ${esc(s.ages)}` : ''}</span>
+    </a>`;
+  view.innerHTML = `<h1 class="page-title">Channels</h1>${groups.length
+    ? groups.map(g => `<section>
+        <a class="group-head" href="${catHref(g.cat)}"><h2>${esc(g.cat)}</h2><span>All ${esc(g.cat)} videos ›</span></a>
+        <div class="channel-grid">${g.list.map(tile).join('')}</div>
+      </section>`).join('')
     : '<p class="empty">No channels match that search.</p>'}`;
 }
 
@@ -238,12 +281,16 @@ function renderChips() {
     '<a class="chip" href="#/">Home</a>',
     '<a class="chip" href="#/channels">Channels</a>',
     '<a class="chip" href="#/history">Watched</a>',
+    '<span class="chip-divider"></span>',
+    ...categories().map(cat => `<a class="chip" href="${catHref(cat)}">${esc(cat)}</a>`),
   ].join('');
 }
 
 function markActiveChip() {
   const page = location.hash.split('/')[1] ?? '';
-  const active = { '': '#/', c: '#/channels', channels: '#/channels', history: '#/history' }[page];
+  const active = page === 'cat'
+    ? location.hash
+    : { '': '#/', c: '#/channels', channels: '#/channels', history: '#/history' }[page];
   for (const a of chips.querySelectorAll('a')) a.classList.toggle('active', a.getAttribute('href') === active);
 }
 
@@ -288,7 +335,10 @@ async function showWatch(id) {
         </div>
       </div>
       <h1 class="watch-title">${esc(v.title)}</h1>
-      <a class="watch-channel" href="#/c/${encodeURIComponent(v.source)}">${esc(sourceTitle(v.source) || v.channelTitle)}</a>
+      <div class="watch-meta">
+        <a class="watch-channel" href="#/c/${encodeURIComponent(v.source)}">${esc(sourceTitle(v.source) || v.channelTitle)}</a>
+        ${saveButton(id, loadSaved().includes(id), true)}
+      </div>
       ${more.length ? `<h2>More to watch</h2>${grid(more, hist)}` : ''}
     </div>`;
 
@@ -480,6 +530,7 @@ function route() {
   markActiveChip();
   if (page === 'watch' && arg) showWatch(arg);
   else if (page === 'c' && arg) showChannel(decodeURIComponent(arg));
+  else if (page === 'cat' && arg) showCategory(decodeURIComponent(arg));
   else if (page === 'channels') showChannels();
   else if (page === 'history') showHistory();
   else showHome();
@@ -510,13 +561,14 @@ view.addEventListener('click', e => {
   } else if (action === 'shuffle') {
     randomRank = new Map();
     route();
-  } else if (action === 'sort') {
-    sortKey = e.target.closest('[data-sort]').dataset.sort;
-    try {
-      localStorage.setItem(SORT_KEY, sortKey);
-    } catch {}
-    shown = PAGE_SIZE;
-    route();
+  } else if (action === 'save') {
+    e.preventDefault(); // the button sits inside a card link
+    const id = e.target.closest('[data-id]').dataset.id;
+    toggleSaved(id);
+    // Re-rendering the home page moves the video into or out of the Watchlist row;
+    // elsewhere just flip the buttons so a playing video isn't interrupted.
+    if ((location.hash.split('/')[1] ?? '') === '') route();
+    else updateSaveButtons(id);
   } else if (action === 'clear-history' && confirm('Clear watch history on this computer?')) {
     saveHistory([]);
     route();
@@ -555,8 +607,11 @@ function showUpdated() {
     : hours < 48 ? `${Math.floor(hours)} hour${hours < 2 ? '' : 's'} ago`
     : `${Math.floor(hours / 24)} days ago`;
   const footer = $('#updated');
-  footer.textContent = `Video list updated ${ago}`;
-  footer.title = updated.toLocaleString();
+  const problems = data.problems ?? [];
+  footer.innerHTML = `<span title="${esc(updated.toLocaleString())}">Video list updated ${ago}</span>${problems.length
+    ? `<details><summary>${problems.length} allowlist problem${problems.length === 1 ? '' : 's'}</summary>
+        <ul>${problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul></details>`
+    : ''}`;
   // The list normally refreshes every 6 hours, so a day without one means the workflow stopped.
   footer.classList.toggle('stale', hours > 24);
 }
