@@ -94,12 +94,55 @@ function saveHistory(list) {
 }
 
 function recordProgress(id, position, duration) {
+  remember(id);
   const list = loadHistory().filter(h => h.id !== id);
   list.unshift({ id, position: Math.floor(position), duration: Math.floor(duration), at: Date.now() });
   saveHistory(list);
 }
 
 const historyMap = () => new Map(loadHistory().map(h => [h.id, h]));
+
+// ---------- channel playlist files ----------
+
+// Each channel's playlists, and the older videos only they contain, live in
+// channels/<id>.json and load when the channel is opened (videos.json would be
+// several megabytes otherwise). Saved or watched videos from those files are
+// remembered on this device so Home can show them without loading the file.
+const KNOWN_KEY = 'kidtube.known';
+const channelFiles = new Map(); // channel id -> Promise of the file
+const loadedFiles = new Map(); // channel id -> the file, once loaded
+let known = {};
+
+function loadChannelFile(id) {
+  if (!channelFiles.has(id)) {
+    const empty = { playlists: [], videos: [] };
+    channelFiles.set(id, fetch(`channels/${encodeURIComponent(id)}.json`, { cache: 'no-cache' })
+      .then(res => (res.ok ? res.json() : empty))
+      .catch(() => empty)
+      .then(file => {
+        for (const v of file.videos) if (!byId.has(v.id)) byId.set(v.id, { ...v, fromPlaylist: true });
+        loadedFiles.set(id, file);
+        return file;
+      }));
+  }
+  return channelFiles.get(id);
+}
+
+function remember(id) {
+  const v = byId.get(id);
+  if (!v?.fromPlaylist || known[id]) return;
+  known[id] = v;
+  try {
+    localStorage.setItem(KNOWN_KEY, JSON.stringify(known));
+  } catch {}
+}
+
+// Remembered videos only count while their channel is still on the list.
+function getVideo(id) {
+  if (byId.has(id)) return byId.get(id);
+  const v = known[id];
+  return v && data.channels.some(c => c.id === v.source) ? v : undefined;
+}
 
 // ---------- watchlist (also kept on this device only) ----------
 
@@ -112,6 +155,7 @@ function loadSaved() {
 }
 
 function toggleSaved(id) {
+  remember(id);
   const list = loadSaved();
   const next = list.includes(id) ? list.filter(x => x !== id) : [id, ...list];
   try {
@@ -139,7 +183,8 @@ const inProgress = h => h.position > 10 && h.position < h.duration - 20;
 function card(v, hist, saved) {
   const h = hist.get(v.id);
   const pct = h?.duration ? Math.min(100, (h.position / h.duration) * 100) : 0;
-  return `<a class="card" href="#/watch/${v.id}">
+  // Playlist-only videos carry their channel so the watch page can load its file.
+  return `<a class="card" href="#/watch/${v.id}${v.fromPlaylist ? `/${encodeURIComponent(v.source)}` : ''}">
     <div class="thumb">
       ${frameImg(v.id, 'mq')}
       <span class="duration">${fmtTime(v.duration)}</span>
@@ -198,9 +243,9 @@ function showHome() {
   const hist = historyMap();
   const history = loadHistory();
   const shuffled = [...data.videos].sort((a, b) => rank(a) - rank(b));
-  const watchlist = loadSaved().map(id => byId.get(id)).filter(Boolean);
+  const watchlist = loadSaved().map(getVideo).filter(Boolean);
 
-  const resume = history.filter(inProgress).map(h => byId.get(h.id)).filter(Boolean).slice(0, ROW_SIZE);
+  const resume = history.filter(inProgress).map(h => getVideo(h.id)).filter(Boolean).slice(0, ROW_SIZE);
 
   // Random videos they haven't watched yet, topped up with watched ones if they've seen nearly everything.
   const unseen = shuffled.filter(v => !hist.has(v.id));
@@ -241,7 +286,15 @@ const avatar = s => (s.avatar
 // A channel's page: all its videos (newest first) or one of its playlists (in the channel's order).
 function showChannel(source, playlistId) {
   const channel = channelList().find(s => s.key === source);
-  const playlists = data.channels.find(c => c.id === source)?.playlists ?? [];
+  if (data.channels.find(c => c.id === source)?.hasPlaylists && !loadedFiles.has(source)) {
+    // Show the newest videos now; redraw with the playlists once they arrive.
+    const hash = location.hash;
+    loadChannelFile(source).then(() => {
+      if (location.hash === hash) route();
+    });
+  }
+  const file = loadedFiles.get(source);
+  const playlists = file?.playlists ?? [];
   const playlist = playlists.find(p => p.id === playlistId);
 
   const tabs = playlists.length ? `<div class="playlist-tabs">
@@ -252,10 +305,11 @@ function showChannel(source, playlistId) {
   const top = `${channel ? `<a class="crumb" href="${catHref(channel.category)}">‹ ${esc(channel.category)}</a>` : ''}
     <h1 class="page-title">${esc(sourceTitle(source) || 'Videos')}</h1>${tabs}`;
 
+  // "All videos" is the newest uploads followed by the older ones from playlists.
   const videos = playlist
     ? playlist.videos.map(id => byId.get(id)).filter(Boolean)
-    : data.videos.filter(v => v.source === source);
-  showList(playlist ? playlist.title : 'Newest videos', videos, { top });
+    : [...data.videos.filter(v => v.source === source), ...(file?.videos ?? []).map(v => byId.get(v.id))];
+  showList(playlist ? playlist.title : 'All videos', videos, { top });
 }
 
 function showCategory(cat) {
@@ -285,7 +339,7 @@ function showChannels() {
 }
 
 function showHistory() {
-  const videos = loadHistory().map(h => byId.get(h.id)).filter(Boolean);
+  const videos = loadHistory().map(h => getVideo(h.id)).filter(Boolean);
   const top = videos.length ? '<button class="more clear" data-action="clear-history">Clear history</button>' : '';
   showList('Watched', videos, { top, emptyText: 'Nothing watched yet.' });
 }
@@ -317,8 +371,14 @@ const ytReady = new Promise(resolve => {
   document.head.append(script);
 });
 
-async function showWatch(id) {
-  const v = byId.get(id);
+async function showWatch(id, channelId) {
+  if (!getVideo(id) && channelId) {
+    const token = watchToken;
+    view.innerHTML = '<p class="empty">Loading…</p>';
+    await loadChannelFile(channelId);
+    if (token !== watchToken) return; // navigated away meanwhile
+  }
+  const v = getVideo(id);
   if (!v) {
     view.innerHTML = '<p class="empty">That video isn’t on the list. <a href="#/">Go home</a></p>';
     return;
@@ -542,7 +602,7 @@ function route() {
   teardownPlayer();
   const [, page, arg, sub] = location.hash.split('/');
   markActiveChip();
-  if (page === 'watch' && arg) showWatch(arg);
+  if (page === 'watch' && arg) showWatch(arg, sub && decodeURIComponent(sub));
   else if (page === 'c' && arg) showChannel(decodeURIComponent(arg), sub && decodeURIComponent(sub));
   else if (page === 'cat' && arg) showCategory(decodeURIComponent(arg));
   else if (page === 'channels') showChannels();
@@ -639,6 +699,9 @@ async function init() {
     return;
   }
   byId = new Map(data.videos.map(v => [v.id, v]));
+  try {
+    known = JSON.parse(localStorage.getItem(KNOWN_KEY)) ?? {};
+  } catch {}
   renderChips();
   showUpdated();
   route();

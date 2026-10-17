@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Reads allowlist.json, asks the YouTube Data API for each channel's uploads
 // and each listed video, and writes site/videos.json for the web app.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 const KEY = process.env.YOUTUBE_API_KEY;
@@ -263,46 +263,57 @@ const fullChannels = resolved.slice(0, fullEntries.length).filter(Boolean);
 const playlistCache = await refreshPlaylists(fullChannels);
 for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
   for (const p of playlists) {
-    for (const id of p.videos) if (!wanted.has(id)) wanted.set(id, { from: channelId });
+    // Older videos that only appear in a playlist go in that channel's own file (below)
+    // rather than videos.json, which every page load downloads.
+    for (const id of p.videos) if (!wanted.has(id)) wanted.set(id, { from: channelId, playlistOnly: true });
   }
 }
 
-for (const v of videoEntries) wanted.set(v.id, { ...wanted.get(v.id), category: v.category });
+for (const v of videoEntries) wanted.set(v.id, { ...wanted.get(v.id), playlistOnly: false, category: v.category });
 for (const id of blocked) wanted.delete(id);
 
 const pages = await mapLimit(chunks([...wanted.keys()], 50), 8, ids =>
   api('videos', { part: 'snippet,contentDetails,status', id: ids.join(','), maxResults: 50 }));
 const details = pages.flatMap(p => p.items);
 
-const videos = details.filter(playable).map(v => {
-  const listed = wanted.get(v.id);
-  const channel = channels.get(listed.from ?? v.snippet.channelId);
-  return {
-    id: v.id,
-    title: v.snippet.title,
-    channelId: v.snippet.channelId,
-    channelTitle: channel?.title ?? v.snippet.channelTitle,
-    // Videos listed on their own, from channels not in the allowlist, are grouped together.
-    source: channel ? channel.id : 'extra',
-    category: listed.category ?? channel?.category ?? 'Other',
-    publishedAt: v.snippet.publishedAt,
-    duration: seconds(v.contentDetails.duration),
-  };
-}).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+const allVideos = details.filter(playable)
+  .sort((a, b) => b.snippet.publishedAt.localeCompare(a.snippet.publishedAt))
+  .map(v => {
+    const listed = wanted.get(v.id);
+    const channel = channels.get(listed.from ?? v.snippet.channelId);
+    return {
+      id: v.id,
+      title: v.snippet.title,
+      channelTitle: channel?.title ?? v.snippet.channelTitle,
+      // Videos listed on their own, from channels not in the allowlist, are grouped together.
+      source: channel ? channel.id : 'extra',
+      category: listed.category ?? channel?.category ?? 'Other',
+      duration: seconds(v.contentDetails.duration),
+    };
+  });
+const videos = allVideos.filter(v => !wanted.get(v.id).playlistOnly);
 
-// Attach playlists to their channels, keeping only videos that made it onto the site.
-const onSite = new Set(videos.map(v => v.id));
+// site/channels/<id>.json: a channel's playlists plus the playlist-only videos they need.
+const byId = new Map(allVideos.map(v => [v.id, v]));
+const inMainList = new Set(videos.map(v => v.id));
+const channelDir = new URL('site/channels/', root);
+await rm(channelDir, { recursive: true, force: true });
+await mkdir(channelDir, { recursive: true });
 for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
   const channel = channels.get(channelId);
   if (!channel) continue;
   const kept = playlists
-    .map(p => ({ id: p.id, title: p.title, videos: p.videos.filter(id => onSite.has(id)) }))
+    .map(p => ({ id: p.id, title: p.title, videos: p.videos.filter(id => byId.has(id)) }))
     .filter(p => p.videos.length);
-  if (kept.length) channel.playlists = kept;
+  if (!kept.length) continue;
+  channel.hasPlaylists = true;
+  const extra = [...new Set(kept.flatMap(p => p.videos))].filter(id => !inMainList.has(id)).map(id => byId.get(id));
+  await writeFile(new URL(`${channelId}.json`, channelDir), JSON.stringify({ playlists: kept, videos: extra }));
 }
 
-const skipped = wanted.size - videos.length;
+const skipped = wanted.size - allVideos.length;
 if (skipped) console.log(`Skipped ${skipped} videos that are private, live, age-restricted, or not embeddable.`);
+console.log(`${allVideos.length - videos.length} more videos are only in playlists, in site/channels/.`);
 
 await writeFile(
   new URL('site/videos.json', root),
