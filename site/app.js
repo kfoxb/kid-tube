@@ -187,19 +187,14 @@ function showHome() {
   const history = loadHistory();
   const shuffled = sortBy(data.videos, 'random');
 
-  const picks = shuffled.slice(0, ROW_SIZE);
-  const pickIds = new Set(picks.map(v => v.id));
   const resume = history.filter(inProgress).map(h => byId.get(h.id)).filter(Boolean).slice(0, ROW_SIZE);
 
-  // Unwatched videos, from channels they've watched before when there are enough of those.
-  const unseen = shuffled.filter(v => !hist.has(v.id) && !pickIds.has(v.id));
-  const watchedSources = new Set(history.map(h => byId.get(h.id)?.source));
-  const familiar = unseen.filter(v => watchedSources.has(v.source));
-  const suggestions = (familiar.length >= ROW_SIZE ? familiar : unseen).slice(0, ROW_SIZE);
+  // Random videos they haven't watched yet, topped up with watched ones if they've seen nearly everything.
+  const unseen = shuffled.filter(v => !hist.has(v.id));
+  const picks = [...unseen, ...shuffled.filter(v => hist.has(v.id))].slice(0, ROW_SIZE);
 
-  const top = row('Random picks', picks, hist, '<button class="pill" data-action="shuffle">Shuffle</button>')
-    + row('Keep watching', resume, hist)
-    + (history.length ? row('Something new', suggestions, hist) : '');
+  const top = row('Keep watching', resume, hist)
+    + row('Random picks', picks, hist, '<button class="pill" data-action="shuffle">Shuffle</button>');
   showList('All videos', data.videos, { top, sortable: true });
 }
 
