@@ -1,0 +1,12 @@
+{
+  "settings": {
+    "maxVideosPerChannel": 200,
+    "includeShorts": false
+  },
+  "channels": [
+    "@SesameStreet",
+    "@PBSKIDS"
+  ],
+  "videos": [],
+  "blockedVideos": []
+}
