@@ -89,7 +89,12 @@
     { "id": "UCG2CL6EUjG8TVT1Tpl9nJdg", "name": "Ms Rachel", "handle": "@msrachel", "category": "Stories & Little Kids", "ages": "0-3", "note": "Toddler only." },
     { "id": "UCgbfG5HoczHIkpzxLYH-8Ww", "name": "Pokémon Kids TV", "handle": "@pokemonkidstv", "category": "Stories & Little Kids", "ages": "2+", "note": "Official Pokémon songs for young kids." },
     { "id": "UCqJ-Xo29CKyLTjn6z2XwYAw", "name": "Game Maker's Toolkit", "handle": "@GMTK", "category": "Zelda & Pokémon (Educational)", "ages": "10+", "note": "Game design analysis, many Zelda videos." },
-    { "id": "UCudx6plmpbs5WtWvsvu-EdQ", "name": "Zeltik", "handle": "@Zeltik", "category": "Zelda & Pokémon (Educational)", "ages": "10+", "note": "Calm Zelda history and design; some dark lore." }
+    { "id": "UCudx6plmpbs5WtWvsvu-EdQ", "name": "Zeltik", "handle": "@Zeltik", "category": "Zelda & Pokémon (Educational)", "ages": "10+", "note": "Calm Zelda history and design; some dark lore." },
+    { "id": "UCipQJmg3yqouy6MRtPv_0Bg", "name": "Little Fox Chinese", "handle": "@LittleFoxChinese", "category": "Languages", "ages": "3+", "note": "Mandarin: animated stories and songs for kids." },
+    { "id": "UCsl1lX__xQ2IGf8c9r6xH8A", "name": "Tingting Comprehensible Chinese", "handle": "@ComprehensibleChinese", "category": "Languages", "ages": "5+", "note": "Mandarin: comprehensible input with props and actions." },
+    { "id": "UCcvTOgUiplI80SPR73ogCEQ", "name": "Mandarin Click", "handle": "@mandarinclick", "category": "Languages", "ages": "6+", "note": "Mandarin: beginner stories with pinyin; inactive since 2024." },
+    { "id": "UC8BRq5Hnjeerz77NA_fiKLA", "name": "HeyKids Norsk", "handle": "@heykids_no", "category": "Languages", "ages": "1+", "note": "Norwegian children's songs." },
+    { "id": "UCDVn8wLFP-zeFVWfWIFb14A", "name": "NRK Super", "handle": "@NRKsuper", "category": "Languages", "ages": "4+", "note": "Norwegian public kids' TV; mostly BlimE music videos." }
   ],
   "curateByVideo": [
     { "id": "UCHTnEwQKNwm49CQeCVZogMw", "name": "Boundary Break", "handle": "@BoundaryBreak", "category": "Zelda & Pokémon (Educational)", "ages": "9+", "note": "How game levels are built; also covers horror/M-rated games." },
