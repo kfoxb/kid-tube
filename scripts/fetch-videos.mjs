@@ -299,7 +299,17 @@ const curatedEntries = parseAll(allowlist.curateByVideo, parseChannel);
 const videoEntries = parseAll(allowlist.videos, e => (typeof e === 'object'
   ? { id: parseVideoId(e.id ?? e.url), category: e.category }
   : { id: parseVideoId(e) }));
-const blocked = new Set(parseAll(allowlist.blockedVideos, parseVideoId));
+// "blocked" takes video and playlist URLs or ids; a playlist blocks every video in it.
+// A URL with both v= and list= (a video opened from a playlist) blocks just the video.
+// The older "blockedVideos" key still works.
+function parseBlocked(entry) {
+  const s = entry.trim();
+  const isVideo = /^[\w-]{11}$/.test(s) || /[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/|\/live\//.test(s);
+  return isVideo ? { video: parseVideoId(s) } : { playlist: parsePlaylistId(s) };
+}
+const blockedEntries = parseAll([...(allowlist.blocked ?? []), ...(allowlist.blockedVideos ?? [])], parseBlocked);
+const blocked = new Set(blockedEntries.filter(b => b.video).map(b => b.video));
+const blockedPlaylists = new Set(blockedEntries.filter(b => b.playlist).map(b => b.playlist));
 
 const entries = [...fullEntries, ...curatedEntries];
 const resolved = await resolveChannels(entries);
@@ -379,6 +389,14 @@ for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
 }
 
 for (const v of videoEntries) wanted.set(v.id, { ...wanted.get(v.id), playlistOnly: false, category: v.category });
+await mapLimit([...blockedPlaylists], 4, async id => {
+  try {
+    for (const v of await playlistVideoIds(id, 1000)) blocked.add(v);
+  } catch (err) {
+    if (err.status !== 404) throw err;
+    problems.push(`Blocked playlist not found: ${id}`);
+  }
+});
 for (const id of blocked) wanted.delete(id);
 
 const details = await videoDetails([...wanted.keys()]);
@@ -414,7 +432,7 @@ for (const [channelId, playlists] of Object.entries(playlistsByChannel)) {
   const channel = channels.get(channelId);
   if (!channel) continue;
   const kept = playlists
-    .filter(p => !isShortsPlaylist(p.title)) // also applies to playlists cached before this rule
+    .filter(p => !isShortsPlaylist(p.title) && !blockedPlaylists.has(p.id)) // also applies to cached playlists
     .map(p => ({ id: p.id, title: p.title, videos: p.videos.filter(id => byId.has(id)) }))
     .filter(p => p.videos.length);
   if (!kept.length) continue;

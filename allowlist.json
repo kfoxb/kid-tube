@@ -117,5 +117,7 @@
     { "id": "UCsoPu95aN_ODIxTDkfxVtZg", "name": "The Jim Henson Company", "handle": "@JimHensonCompany", "category": "Stories", "ages": "4+", "note": "Kids clips mixed with trailers and adult behind-the-scenes." }
   ],
   "videos": [],
-  "blockedVideos": []
+  "blocked": [
+    "https://www.youtube.com/watch?v=ZEqHO7excFI"
+  ]
 }
