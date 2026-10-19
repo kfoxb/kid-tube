@@ -116,7 +116,10 @@
     { "id": "UCAJnyTWJPpKXuwgWQDdNWrQ", "name": "Netflix Jr. (StoryBots)", "handle": "@NetflixJr", "category": "Stories", "ages": "3+", "note": "StoryBots' old channel, now mixed Netflix kids content." },
     { "id": "UCsoPu95aN_ODIxTDkfxVtZg", "name": "The Jim Henson Company", "handle": "@JimHensonCompany", "category": "Stories", "ages": "4+", "note": "Kids clips mixed with trailers and adult behind-the-scenes." }
   ],
-  "videos": [],
+  "videos": [
+    { "id": "DaUHU2I-haA", "category": "Zelda & Pokémon" },
+    { "id": "ZI50XUeN6QE", "category": "Zelda & Pokémon", "note": "Retro Game Mechanics Explained: MissingNo.'s Glitchy Appearance Explained" }
+  ],
   "blocked": [
     "https://www.youtube.com/watch?v=ZEqHO7excFI"
   ]
