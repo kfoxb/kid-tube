@@ -17,7 +17,8 @@ Edit `allowlist.json` and push. The site rebuilds in a minute or two.
   ],
   "videos": [
     "https://www.youtube.com/watch?v=xxxxxxxxxxx",
-    { "id": "xxxxxxxxxxx", "category": "Music" }
+    { "id": "xxxxxxxxxxx", "category": "Music" },
+    { "url": "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxx", "category": "Music" }
   ],
   "blocked": [
     "https://www.youtube.com/watch?v=xxxxxxxxxxx",
@@ -28,7 +29,7 @@ Edit `allowlist.json` and push. The site rebuilds in a minute or two.
 
 - **channels**: channels whose newest `maxVideosPerChannel` uploads are all included. Give an `id`, a `handle`, or both. `category` sets where the channel shows up. `ages` appears on the Channels page, and `name` and `note` are just for you. A plain string (an @handle, a channel URL, or a `UC…` id) also works.
 - **curateByVideo**: channels where only hand-picked videos are allowed. Nothing from them shows up until you add their videos to `videos`. Those videos then get the channel's category and channel page. Add `"titleIncludes": "How It's Made"` (or a list of phrases) to also include any of the channel's 500 newest uploads whose title contains one of the phrases. Add `"playlists": ["https://www.youtube.com/playlist?list=…"]` to include every video in those playlists. They also become the playlist buttons on the channel's page.
-- **videos**: single videos, as a URL or id. A video from a channel not listed above goes under "More videos", in the category you give it or "Other".
+- **videos**: single videos or whole playlists, as a URL or id. A playlist stands for every video in it. A video from a channel not listed above goes under "More videos", in the category you give it or "Other".
 - **blocked**: videos or whole playlists to leave out, as URLs or ids. A blocked playlist removes every video in it, and its button on the channel page. A link to a video opened from a playlist (`watch?v=…&list=…`) blocks just that video.
 - **includeShorts**: Shorts and live streams are left out unless this is `true`.
 

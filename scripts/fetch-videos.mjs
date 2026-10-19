@@ -296,17 +296,18 @@ function parseAll(list, parse) {
 // the videos listed under "videos", but still get a category and a channel page.
 const fullEntries = parseAll(allowlist.channels, parseChannel);
 const curatedEntries = parseAll(allowlist.curateByVideo, parseChannel);
-const videoEntries = parseAll(allowlist.videos, e => (typeof e === 'object'
-  ? { id: parseVideoId(e.id ?? e.url), category: e.category }
-  : { id: parseVideoId(e) }));
-// "blocked" takes video and playlist URLs or ids; a playlist blocks every video in it.
-// A URL with both v= and list= (a video opened from a playlist) blocks just the video.
-// The older "blockedVideos" key still works.
-function parseBlocked(entry) {
+// "videos" and "blocked" take video and playlist URLs or ids; a playlist stands for every video in it.
+// A URL with both v= and list= (a video opened from a playlist) means just the video.
+function parseVideoOrPlaylist(entry) {
   const s = entry.trim();
   const isVideo = /^[\w-]{11}$/.test(s) || /[?&]v=|youtu\.be\/|\/shorts\/|\/embed\/|\/live\//.test(s);
   return isVideo ? { video: parseVideoId(s) } : { playlist: parsePlaylistId(s) };
 }
+const videoEntries = parseAll(allowlist.videos, e => (typeof e === 'object'
+  ? { ...parseVideoOrPlaylist(e.id ?? e.url), category: e.category }
+  : parseVideoOrPlaylist(e)));
+// The older "blockedVideos" key still works.
+const parseBlocked = parseVideoOrPlaylist;
 const blockedEntries = parseAll([...(allowlist.blocked ?? []), ...(allowlist.blockedVideos ?? [])], parseBlocked);
 const blocked = new Set(blockedEntries.filter(b => b.video).map(b => b.video));
 const blockedPlaylists = new Set(blockedEntries.filter(b => b.playlist).map(b => b.playlist));
@@ -388,7 +389,17 @@ for (const [channelId, { playlists }] of Object.entries(playlistCache)) {
   }
 }
 
-for (const v of videoEntries) wanted.set(v.id, { ...wanted.get(v.id), playlistOnly: false, category: v.category });
+// Playlists listed under "videos" expand to every video in them, in the entry's category.
+const listedVideos = videoEntries.filter(e => e.video).map(e => ({ id: e.video, category: e.category }));
+await mapLimit(videoEntries.filter(e => e.playlist), 4, async e => {
+  try {
+    for (const id of await playlistVideoIds(e.playlist, MAX_PLAYLIST_PAGES * 50)) listedVideos.push({ id, category: e.category });
+  } catch (err) {
+    if (err.status !== 404) throw err;
+    problems.push(`Playlist not found: ${e.playlist}`);
+  }
+});
+for (const v of listedVideos) wanted.set(v.id, { ...wanted.get(v.id), playlistOnly: false, category: v.category });
 await mapLimit([...blockedPlaylists], 4, async id => {
   try {
     for (const v of await playlistVideoIds(id, 1000)) blocked.add(v);
